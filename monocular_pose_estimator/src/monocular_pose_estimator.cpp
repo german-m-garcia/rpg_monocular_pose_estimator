@@ -131,8 +131,7 @@ void MPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
  * \param image_msg the ROS message containing the image to be processed
  */
 void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
-{
-
+{  
   // Check whether already received the camera calibration data
   if (!have_camera_info_)
   {
@@ -143,8 +142,8 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
   // Import the image from ROS message to OpenCV mat
   cv_bridge::CvImagePtr cv_ptr;
   try
-  {
-    cv_ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::MONO8);
+  {    
+    cv_ptr = cv_bridge::toCvCopy(image_msg/*, sensor_msgs::image_encodings::MONO8*/);
   }
   catch (cv_bridge::Exception& e)
   {
@@ -152,6 +151,7 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
     return;
   }
   cv::Mat image = cv_ptr->image;
+
 
   // Get time at which the image was taken. This time is used to stamp the estimated pose and also calculate the position of where to search for the makers in the image
   double time_to_predict = image_msg->header.stamp.toSec();

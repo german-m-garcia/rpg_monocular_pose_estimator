@@ -42,6 +42,9 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
   cv::Mat bw_image;
   //cv::threshold(image, bwImage, threshold_value, 255, cv::THRESH_BINARY);
   cv::threshold(image(ROI), bw_image, threshold_value, 255, cv::THRESH_TOZERO);
+  
+  cv::imshow("thresholded img",bw_image);
+  cv::waitKey(1);
 
   // Gaussian blur the image
   cv::Mat gaussian_image;
@@ -54,7 +57,19 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
 
   // Find all contours
   std::vector<std::vector<cv::Point> > contours;
+  std::vector<cv::Vec4i> hierarchy;
+  cv::RNG rng(12345);
   cv::findContours(gaussian_image.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+  cv::Mat drawing = cv::Mat::zeros( gaussian_image.size(), CV_8UC3 );
+  //DEBUG: draw all the contours
+  {
+  	 
+	 for( int i = 0; i< contours.size(); i++ )
+     {
+       cv::Scalar color = cv::Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+       cv::drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, cv::Point() );
+     }    
+  }
 
   unsigned numPoints = 0; // Counter for the number of detected LEDs
 
@@ -107,7 +122,12 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
       point(0) = undistorted_points[j].x;
       point(1) = undistorted_points[j].y;
       pixel_positions(j) = point;
+      drawing.at<cv::Vec3b>((int)point(1), (int)point(0))[0] = 255;
+      drawing.at<cv::Vec3b>((int)point(1), (int)point(0))[1] = 255;
+      drawing.at<cv::Vec3b>((int)point(1), (int)point(0))[2] = 255;
     }
+    cv::imshow("contours and points",drawing);
+    cv::waitKey(1);
   }
 }
 

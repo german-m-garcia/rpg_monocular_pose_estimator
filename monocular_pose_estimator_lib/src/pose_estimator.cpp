@@ -27,6 +27,7 @@
  */
 
 #include "monocular_pose_estimator_lib/pose_estimator.h"
+#include "ros/ros.h"
 
 namespace monocular_pose_estimator
 {
@@ -80,7 +81,7 @@ bool PoseEstimator::estimateBodyPose(cv::Mat image, double time_to_predict)
     if (detected_led_positions.size() >= min_num_leds_detected_) // If found enough LEDs, Reinitialise
     {
       // Reinitialise
-//      ROS_WARN("Initialising using brute-force correspondence search.");
+      ROS_INFO("Initialising using brute-force correspondence search.");
 
       setImagePoints(detected_led_positions);
 
@@ -122,7 +123,7 @@ bool PoseEstimator::estimateBodyPose(cv::Mat image, double time_to_predict)
         if (num_loops < 2)
         { // If haven't searched image yet, search image
 
-//          ROS_WARN("Too few LEDs detected in ROI. Searching whole image. Num LEDs detected: %d.", (int)detected_led_positions.size());
+          ROS_INFO("Too few LEDs detected in ROI. Searching whole image. Num LEDs detected: %d.", (int)detected_led_positions.size());
 
           // Search whole image
           region_of_interest_ = cv::Rect(0, 0, image.cols, image.rows);
@@ -132,6 +133,10 @@ bool PoseEstimator::estimateBodyPose(cv::Mat image, double time_to_predict)
                                 max_blob_area_, max_width_height_distortion_, max_circular_distortion_,
                                 detected_led_positions, distorted_detection_centers_, camera_matrix_K_,
                                 camera_distortion_coeffs_);
+         
+         
+         ROS_INFO("Searched whole image. Num LEDs detected: %d.", (int)detected_led_positions.size());
+
 
         }
         else
@@ -491,6 +496,7 @@ unsigned PoseEstimator::checkCorrespondences()
                                                                           unused_back_projected_object_points,
                                                                           certainty);
 
+            std::cout << "certainty= "<<certainty<< " certainty_threshold_=" << certainty_threshold_ << std::endl;
             if (certainty >= certainty_threshold_)
             {
               valid_correspondence_found = 1;
@@ -522,6 +528,7 @@ unsigned PoseEstimator::checkCorrespondences()
 
     }
 
+	std::cout<<"num_valid_correspondences="<<num_valid_correspondences<<" N="<<N<<" valid_correspondence_threshold_="<<valid_correspondence_threshold_<<std::endl;
     if ((double)num_valid_correspondences / N >= valid_correspondence_threshold_)
     {
       valid_correspondences = 1;
@@ -596,6 +603,7 @@ unsigned PoseEstimator::initialise()
         break;
     }
 
+    std::cout <<"num_object_points_permutations="<<num_object_points_permutations<<std::endl;
     for (unsigned j = 0; j < num_object_points_permutations; ++j)
     {
 
@@ -668,11 +676,14 @@ unsigned PoseEstimator::initialise()
             unsigned count_within_pixel_threshold = 0;
             for (unsigned ll = 0; ll < min_distances.size(); ++ll)
             {
+              
               if (min_distances(ll) < back_projection_pixel_tolerance_)
               {
+                std::cout <<"min_distances(ll)="<<min_distances(ll)<<"  back_projection_pixel_tolerance_ ="<<back_projection_pixel_tolerance_<<std::endl;
                 count_within_pixel_threshold++;
               }
             }
+            //std::cout << "count_within_pixel_threshold="<<count_within_pixel_threshold<<std::endl;
             if (count_within_pixel_threshold > 0)
             {
               unsigned im_idx;
