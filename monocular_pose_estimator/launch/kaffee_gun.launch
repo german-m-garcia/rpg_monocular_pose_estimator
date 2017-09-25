@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch> 
 
+	<include file="$(find monocular_pose_estimator)/launch/static_tfs.launch" />
+	
 	<!-- Name of the YAML file containing the marker positions -->
 	<arg name="YAML_file_name" default="kaffee_filter_gun"/>
 
@@ -12,19 +14,21 @@
 	<remap from="/camera/image_raw" to="/camera/ir/image_raw"/>
 			<remap from="/camera/camera_info" to="/camera/ir/camera_info"/>
 	
+		<!-- launch-prefix="valgrind -leak-check=full" -->
 		<node name="monocular_pose_estimator" pkg="monocular_pose_estimator" type="monocular_pose_estimator" respawn="false" output="screen"> 
 			
 			
 			
 			<rosparam command="load" file="$(arg marker_positions_file)"/>
-			<param name= "threshold_value" value = "180" />
+			<param name= "object_mesh" value = "$(find system_setup)/meshes/kaffee_aligned_scaled.obj" />
+			<param name= "threshold_value" value = "220" />
 			<param name= "gaussian_sigma" value = "0.6" />
-			<param name= "min_blob_area" value = "10" />
+			<param name= "min_blob_area" value = "15" />
 			<param name= "max_blob_area" value = "200" />
 			<param name= "max_width_height_distortion" value = "0.5" />
 			<param name= "max_circular_distortion" value = "0.5" />
-			<param name= "back_projection_pixel_tolerance" value = "10" />
-			<param name= "nearest_neighbour_pixel_tolerance" value = "7" />
+			<param name= "back_projection_pixel_tolerance" value = "15" />
+			<param name= "nearest_neighbour_pixel_tolerance" value = "5" />
 			<param name= "certainty_threshold" value = "0.75" />
 			<param name= "valid_correspondence_threshold" value = "0.7" />
       		<param name= "roi_border_thickness" value="50" />
@@ -32,5 +36,8 @@
 	
 		<node name="view_visualisation_image" pkg="image_view" type="image_view" args="image:=/monocular_pose_estimator/image_with_detections" />
 	</group>
+	
+	<!-- rosbag play -->
+	<node pkg="rosbag" type="play" name="player" output="screen" args="-d 1 -s 2 -r 0.5 $(find monocular_pose_estimator)/bags/rgb_ir/exposure_49_take_1.bag"/>
 	
 </launch>

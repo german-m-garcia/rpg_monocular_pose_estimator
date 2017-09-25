@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.4.6)
 project(monocular_pose_estimator_lib)
 
-set(CMAKE_CXX_FLAGS "-O3")
+set(CMAKE_CXX_FLAGS "-O3 -g -std=c++11")
 
 find_package(catkin REQUIRED COMPONENTS roscpp rospy cmake_modules)
 find_package(Eigen REQUIRED)

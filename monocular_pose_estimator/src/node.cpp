@@ -28,6 +28,7 @@ int main(int argc, char* argv[])
 
   monocular_pose_estimator::MPENode mpe_node;
 
+
   ros::spin();
 
   return 0;

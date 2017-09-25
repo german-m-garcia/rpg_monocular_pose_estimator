@@ -27,6 +27,8 @@
  */
 
 #include "monocular_pose_estimator_lib/led_detector.h"
+#include <opencv2/imgproc/imgproc.hpp>
+#include <string>
 
 namespace monocular_pose_estimator
 {
@@ -51,7 +53,7 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
   cv::Size ksize; // Gaussian kernel size. If equal to zero, then the kerenl size is computed from the sigma
   ksize.width = 0;
   ksize.height = 0;
-  GaussianBlur(bw_image.clone(), gaussian_image, ksize, gaussian_sigma, gaussian_sigma, cv::BORDER_DEFAULT);
+  cv::GaussianBlur(bw_image.clone(), gaussian_image, ksize, gaussian_sigma, gaussian_sigma, cv::BORDER_DEFAULT);
 
   //cv::imshow( "Gaussian", gaussian_image );
 
@@ -62,14 +64,14 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
   cv::findContours(gaussian_image.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
   cv::Mat drawing = cv::Mat::zeros( gaussian_image.size(), CV_8UC3 );
   //DEBUG: draw all the contours
-  {
-  	 
-	 for( int i = 0; i< contours.size(); i++ )
-     {
-       cv::Scalar color = cv::Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
-       cv::drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, cv::Point() );
-     }    
-  }
+//  {
+//
+//	 for( int i = 0; i< contours.size(); i++ )
+//     {
+//       cv::Scalar color = cv::Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+//       cv::drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, cv::Point() );
+//     }
+//  }
 
   unsigned numPoints = 0; // Counter for the number of detected LEDs
 
@@ -97,6 +99,19 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
     {
       distorted_points.push_back(mc);
       numPoints++;
+
+      //draw the valid LED detection
+      {
+		 cv::Scalar color = cv::Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+		 cv::drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, cv::Point() );
+		 //PRINT THE NUMBER AS WELL
+		 std::string text = std::to_string((int)distorted_points.size());
+		 cv::putText(drawing, text, mc, 2, 1, color );
+		 cv::imshow( "contours", drawing );
+		 std::cout <<" detection #"<<distorted_points.size()<<std::endl;
+		 //cv::waitKey(0);
+	   }
+
     }
   }
 
@@ -122,9 +137,18 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
       point(0) = undistorted_points[j].x;
       point(1) = undistorted_points[j].y;
       pixel_positions(j) = point;
-      drawing.at<cv::Vec3b>((int)point(1), (int)point(0))[0] = 255;
-      drawing.at<cv::Vec3b>((int)point(1), (int)point(0))[1] = 255;
-      drawing.at<cv::Vec3b>((int)point(1), (int)point(0))[2] = 255;
+      int row = (int)point(1);
+      int col = (int)point(0);
+      if( row >= drawing.rows || col >= drawing.cols){
+    	  std::cout <<"accessing row,col="<<row<<" , "<<col<<" from dimensions: "<<drawing.rows << " "<<drawing.cols<<std::endl;
+
+      } else {
+
+    	  drawing.at<cv::Vec3b>(row,col)[0] = 255;
+    	  drawing.at<cv::Vec3b>(row,col)[1] = 255;
+    	  drawing.at<cv::Vec3b>(row,col)[2] = 255;
+      }
+
     }
     cv::imshow("contours and points",drawing);
     cv::waitKey(1);

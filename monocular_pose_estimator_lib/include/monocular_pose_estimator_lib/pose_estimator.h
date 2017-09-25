@@ -43,6 +43,7 @@
 namespace monocular_pose_estimator
 {
 
+
 /**
  * The PoseEstimator class for tracking objects with infrared LEDs and an infrared camera.
  *
@@ -61,6 +62,7 @@ private:
   double previous_time_; //!< Stores the time of the previous pose
   double predicted_time_; //!< Stores the time of the predicted pose
   List4DPoints object_points_; //!< Stores the positions of the makers/LEDs on the object being tracked in the object-fixed coordinate frame using homogeneous coordinates. It is a vector of 4D points.
+  List4DPoints object_points_camera_frame_; //!< Stores the positions of the makers/LEDs on the object being tracked in the camera coordinate frame using homogeneous coordinates. It is a vector of 4D points.
   List2DPoints image_points_; //!< Stores the positions of the detected marker points found in the image. It is a vector of 2D points.
   List2DPoints predicted_pixel_positions_; //!< Stores the predicted pixel positions of the markers in the image. \see predictMarkerPositionsInImage
   List3DPoints image_vectors_; //!< Stores the unit vectors leading from the camera centre of projection out to the world points/marker points - these are used in the P3P algorithm. \see setImagePoints, calculateImageVectors
@@ -359,6 +361,16 @@ public:
    *
    */
   List4DPoints getMarkerPositions();
+
+  /**
+    * Returns the positions of the markers on the object in the camera coordinate frame
+    *
+    * \return vector containing the position of the LEDs/markers on the object in the camera coordinate frame. The coordinates are given in homogeneous coordinates.
+    *
+    * \see object_points
+    *
+    */
+  List4DPoints getMarkerCameraFramePositions();
 
   /**
    * Estimates the pose of the tracked object

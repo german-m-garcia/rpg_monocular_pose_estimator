@@ -52,6 +52,13 @@
 namespace monocular_pose_estimator
 {
 
+struct TrackedObject
+{
+	std::string name_;
+	std::string mesh_path_;
+	XmlRpc::XmlRpcValue points_list;
+};
+
 class MPENode
 {
 private:
@@ -65,6 +72,8 @@ private:
   ros::Subscriber image_sub_; //!< The ROS subscriber to the raw camera image
   ros::Subscriber camera_info_sub_; //!< The ROS subscriber to the camera info
 
+  ros::Publisher vis_pub_; //!< The ROS publisher that publishes markers positions in camera frame
+
   dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig> dr_server_; //!< The dynamic reconfigure server
   //dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig>::CallbackType cb_; //!< The dynamic reconfigure callback type
 
@@ -75,6 +84,9 @@ private:
 
   PoseEstimator trackable_object_; //!< Declaration of the object whose pose will be estimated
 
+  TrackedObject tracked_object;
+
+
 public:
 
   MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
@@ -82,6 +94,8 @@ public:
   ~MPENode();
 
   void cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg);
+
+  void publishLEDs(const List4DPoints& object_points_camera_frame);
 
   void imageCallback(const sensor_msgs::Image::ConstPtr& image_msg);
 

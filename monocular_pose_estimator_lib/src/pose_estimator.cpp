@@ -51,6 +51,7 @@ void PoseEstimator::augmentImage(cv::Mat &image)
 void PoseEstimator::setMarkerPositions(List4DPoints positions_of_markers_on_object)
 {
   object_points_ = positions_of_markers_on_object;
+  object_points_camera_frame_ = positions_of_markers_on_object;
   predicted_pixel_positions_.resize(object_points_.size());
   histogram_threshold_ = Combinations::numCombinations(object_points_.size(), 3);
 }
@@ -58,6 +59,11 @@ void PoseEstimator::setMarkerPositions(List4DPoints positions_of_markers_on_obje
 List4DPoints PoseEstimator::getMarkerPositions()
 {
   return object_points_;
+}
+
+List4DPoints PoseEstimator::getMarkerCameraFramePositions()
+{
+  return object_points_camera_frame_;
 }
 
 bool PoseEstimator::estimateBodyPose(cv::Mat image, double time_to_predict)
@@ -117,6 +123,17 @@ bool PoseEstimator::estimateBodyPose(cv::Mat image, double time_to_predict)
         setImagePoints(detected_led_positions);
         findCorrespondencesAndPredictPose(time_to_predict);
         repeat_check = false;
+        //at this point we should have the LED detections and the pose of the object frame
+        std::cout <<" current_pose_="<<std::endl<<current_pose_<<std::endl;
+        std::cout <<" camera_matrix_K_="<<std::endl<<camera_matrix_K_<<std::endl;
+        std::cout <<"----------------"<<std::endl;
+        //iterate over the LEDs in object coordinates
+        for(int i=0;i<object_points_.size(); i++){
+        	Eigen::Vector4d& X_o = object_points_[i];
+        	Eigen::Vector4d& X_k = object_points_camera_frame_[i];
+			X_k = current_pose_ * X_o;
+        	std::cout <<"X"<<i<<"_k="<<X_k<<std::endl;
+        }
       }
       else
       { // If too few LEDS detected
@@ -349,15 +366,20 @@ double PoseEstimator::calculateSquaredReprojectionErrorAndCertainty(const List2D
 VectorXuPairs PoseEstimator::correspondencesFromHistogram(MatrixXYu & histogram)
 {
   //unsigned threshold = 4;
-  VectorXuPairs correspondences(histogram.cols(), 2);
+  VectorXuPairs correspondences(histogram.cols(), 2); //the rows are the number of LEDs, columns are 2
   unsigned num_correspondences = 0;
   unsigned max_value;
   unsigned row_idx, col_idx;
 
   //for (unsigned j = 0; j < std::min(histogram.rows(), histogram.cols()); ++j)
+
+  //iterate over the columns (LEDs) of the histogram
+  std::cout <<"histogram_threshold_ = "<<histogram_threshold_<<std::endl;
   for (unsigned j = 0; j < histogram.cols(); ++j)
   {
-    max_value = histogram.maxCoeff(&row_idx, &col_idx);
+
+	  //gets the maximum value for a corresponding detection (row_idx)
+	  max_value = histogram.maxCoeff(&row_idx, &col_idx);
 
     // if (max_value == 0)
     if (max_value < histogram_threshold_)
@@ -369,7 +391,9 @@ VectorXuPairs PoseEstimator::correspondencesFromHistogram(MatrixXYu & histogram)
     histogram.col(col_idx).setConstant(0); // Only set the column to zero
   }
 
+  std::cout <<"PoseEstimator::correspondencesFromHistogram  correspondences size="<< correspondences.rows()<< " x "<<correspondences.cols()<<std::endl;
   correspondences.conservativeResize(num_correspondences, 2);
+  std::cout <<"PoseEstimator::correspondencesFromHistogram  conservativeResize size="<< correspondences.rows()<< " x "<<correspondences.cols()<<std::endl;
 
   return correspondences;
 }
@@ -403,6 +427,7 @@ unsigned PoseEstimator::checkCorrespondences()
 
   // The unit image vectors from the camera out to the object points are already set when the image points are set in PoseEstimator::setImagePoints()
 
+  std::cout <<"detections x LEDs in the model ="<<correspondences_.rows()<< " x "<< correspondences_.cols()<<std::endl;
   if (correspondences_.rows() < 4)
   {
     return valid_correspondences;
@@ -496,7 +521,7 @@ unsigned PoseEstimator::checkCorrespondences()
                                                                           unused_back_projected_object_points,
                                                                           certainty);
 
-            std::cout << "certainty= "<<certainty<< " certainty_threshold_=" << certainty_threshold_ << std::endl;
+            //std::cout << "certainty= "<<certainty<< " certainty_threshold_=" << certainty_threshold_ << std::endl;
             if (certainty >= certainty_threshold_)
             {
               valid_correspondence_found = 1;
@@ -537,6 +562,7 @@ unsigned PoseEstimator::checkCorrespondences()
       for (unsigned kk = 0; kk < object_points_.size(); ++kk)
       {
         object_points_matrix.col(kk) = object_points_(kk);
+        std::cout <<" object point #"<<kk<< " "<<object_points_(kk)<<std::endl;
       }
       object_points_matrix.conservativeResize(3, object_points_matrix.cols());
       mean_reprojected_object_points.conservativeResize(3, mean_reprojected_object_points.cols());
@@ -561,6 +587,7 @@ unsigned PoseEstimator::initialise()
   unsigned num_object_points_permutations = object_points_permutations.rows();
 
   MatrixXYu hist_corr;
+  std::cout <<"PoseEstimator::initialise image points="<<image_points_.size()<<" LEDs in the model="<< object_points_.size()<<std::endl;
   hist_corr.setZero(image_points_.size(), object_points_.size());
 
   // The unit image vectors from the camera out to the object points are already set when the image points are set in PoseEstimator::setImagePoints()
@@ -569,6 +596,8 @@ unsigned PoseEstimator::initialise()
 
   // for every combination of 3 seen points, we have to iterate through all
   // the possible permutations of 3 object points.
+  std::cout <<" number of possible combinations of Image-LED-Detections Combinations(D,3)="<<num_seen_points_combinations<<std::endl;
+  // for all D3 in Combinations(D,3)
   for (unsigned i = 0; i < num_seen_points_combinations; ++i)
   {
 
@@ -603,7 +632,8 @@ unsigned PoseEstimator::initialise()
         break;
     }
 
-    std::cout <<"num_object_points_permutations="<<num_object_points_permutations<<std::endl;
+    //std::cout <<"num_object_points_permutations="<<num_object_points_permutations<<std::endl;
+    //Algorithm1: for all L3 in Permutations(L,3)
     for (unsigned j = 0; j < num_object_points_permutations; ++j)
     {
 
@@ -617,6 +647,7 @@ unsigned PoseEstimator::initialise()
       world_points.col(2) = temp_point.head<3>();
 
       // Compute the poses using the P3P algorithm
+      // Algorithm1: P <- P3P(D3,L3)
       int executed_correctly = P3P::computePoses(feature_vectors, world_points, solutions);
 
       // If the P3P algorithm found a solution (i.e. the world points were not aligned), then continue
@@ -679,7 +710,7 @@ unsigned PoseEstimator::initialise()
               
               if (min_distances(ll) < back_projection_pixel_tolerance_)
               {
-                std::cout <<"min_distances(ll)="<<min_distances(ll)<<"  back_projection_pixel_tolerance_ ="<<back_projection_pixel_tolerance_<<std::endl;
+                //std::cout <<"min_distances(ll)="<<min_distances(ll)<<"  back_projection_pixel_tolerance_ ="<<back_projection_pixel_tolerance_<<std::endl;
                 count_within_pixel_threshold++;
               }
             }
@@ -701,6 +732,7 @@ unsigned PoseEstimator::initialise()
                 {
                   im_idx = unused_im_points_idx(pairs(nn, 0) - 1); // image point index
                   obj_idx = unused_object_points_idx(pairs(nn, 1) - 1); // object point index
+                  // rows = image detections; cols = LEDs
                   hist_corr(im_idx, obj_idx) = hist_corr(im_idx, obj_idx) + 1;
                 }
               }
@@ -714,7 +746,9 @@ unsigned PoseEstimator::initialise()
 
   if (!(hist_corr.array() == 0).all())
   {
-    correspondences_ = correspondencesFromHistogram(hist_corr);
+    std::cout <<" histogram(d,l).size = "<<hist_corr.rows()<<" "<<hist_corr.cols()<<std::endl;
+    std::cout << hist_corr<<std::endl;
+	correspondences_ = correspondencesFromHistogram(hist_corr);
     if (checkCorrespondences() == 1)
     {
       return 1; // Found a solution

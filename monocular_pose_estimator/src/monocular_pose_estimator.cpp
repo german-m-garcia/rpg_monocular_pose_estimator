@@ -28,6 +28,8 @@
  */
 
 #include "monocular_pose_estimator/monocular_pose_estimator.h"
+#include <visualization_msgs/MarkerArray.h>
+#include <visualization_msgs/Marker.h>
 
 namespace monocular_pose_estimator
 {
@@ -58,6 +60,22 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
 
   // Create the marker positions from the test points
   List4DPoints positions_of_markers_on_object;
+
+  //initialize the marker publisher
+  vis_pub_ = nh_.advertise<visualization_msgs::Marker>( "LEDs", 5 );
+
+  // Read the object mesh file
+  std::string object_config;
+  if(! nh_private.getParam("object_mesh",object_config)){
+	  ROS_ERROR("%s: No reference file containing the object mesh. Use the 'object_mesh' parameter in the launch file.",
+		        ros::this_node::getName().c_str());
+	  ros::shutdown();
+  }
+  else {
+
+	  ROS_INFO("Read object mesh file: %s", object_config);
+
+  }
 
   // Read in the marker positions from the YAML parameter file
   XmlRpc::XmlRpcValue points_list;
@@ -125,6 +143,42 @@ void MPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
 
 }
 
+void MPENode::publishLEDs(const List4DPoints& object_points_camera_frame){
+
+
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = cam_info_.header.frame_id;
+	marker.header.stamp = ros::Time();
+	marker.ns = nh_.getNamespace();
+	marker.id = 0;
+	marker.type = visualization_msgs::Marker::SPHERE_LIST;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.pose.orientation.x = 0.0;
+	marker.pose.orientation.y = 0.0;
+	marker.pose.orientation.z = 0.0;
+	marker.pose.orientation.w = 1.0;
+	marker.scale.x = 0.01;
+	marker.scale.y = 0.01;
+	marker.scale.z = 0.01;
+	marker.color.a = 1.0; // Don't forget to set the alpha!
+	marker.color.r = 1.0;
+	marker.color.g = 0.0;
+	marker.color.b = 0.0;
+
+
+	for(int i=0;i < object_points_camera_frame.size(); i++){
+		const Eigen::Vector4d& X_k = object_points_camera_frame[i];
+		geometry_msgs::Point p;
+		p.x = X_k(0);
+		p.y = X_k(1);
+		p.z = X_k(2);
+		marker.points.push_back(p);
+	}
+	vis_pub_.publish(marker);
+
+
+}
+
 /**
  * The callback function that is executed every time an image is received. It runs the main logic of the program.
  *
@@ -188,6 +242,11 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
 
     // Publish the pose
     pose_pub_.publish(predicted_pose_);
+
+    //retrieve the position of the markers in the camera coordinate frame
+
+    publishLEDs(trackable_object_.getMarkerCameraFramePositions());
+
   }
   else
   { // If pose was not updated
