@@ -168,7 +168,7 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
 	try
 	{
 		cv_ptr = cv_bridge::toCvCopy(ir_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
-		cv_rgb_ptr = cv_bridge::toCvCopy(rgb_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
+		cv_rgb_ptr = cv_bridge::toCvCopy(rgb_image_msg, sensor_msgs::image_encodings::BGR8);
 	}
 	catch (cv_bridge::Exception& e)
 	{
