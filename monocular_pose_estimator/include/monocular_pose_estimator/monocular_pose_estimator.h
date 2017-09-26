@@ -49,6 +49,15 @@
 
 #include "monocular_pose_estimator_lib/pose_estimator.h"
 
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/synchronizer.h>
+
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <sensor_msgs/Image.h>
+
+typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> MySyncPolicy;
+
 namespace monocular_pose_estimator
 {
 
@@ -86,6 +95,9 @@ private:
 
   TrackedObject tracked_object;
 
+  message_filters::Subscriber<sensor_msgs::Image> ir_sub_, rgb_sub_;
+  message_filters::Synchronizer<MySyncPolicy> sync_;
+
 
 public:
 
@@ -96,6 +108,8 @@ public:
   void cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg);
 
   void publishLEDs(const List4DPoints& object_points_camera_frame);
+
+  void sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg);
 
   void imageCallback(const sensor_msgs::Image::ConstPtr& image_msg);
 

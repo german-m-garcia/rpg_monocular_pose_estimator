@@ -31,6 +31,34 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <visualization_msgs/Marker.h>
 
+
+void sync_callback_rgb_ir_extern(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
+
+	ROS_INFO("MPENode::sync_callback_rgb_ir");
+
+	// Import the image from ROS message to OpenCV mat
+	cv_bridge::CvImagePtr cv_ptr, cv_rgb_ptr;
+	try
+	{
+		cv_ptr = cv_bridge::toCvCopy(ir_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
+		cv_rgb_ptr = cv_bridge::toCvCopy(rgb_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
+	}
+	catch (cv_bridge::Exception& e)
+	{
+		ROS_ERROR("cv_bridge exception: %s", e.what());
+		return;
+	}
+	cv::Mat ir = cv_ptr->image;
+	cv::Mat rgb = cv_rgb_ptr->image;
+
+	cv::imshow("IR",ir);
+	cv::imshow("RGB",rgb);
+	cv::waitKey(1);
+	return;
+
+}
+
+
 namespace monocular_pose_estimator
 {
 
@@ -39,7 +67,7 @@ namespace monocular_pose_estimator
  *
  */
 MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
-  : nh_(nh), nh_private_(nh_private), have_camera_info_(false)
+  : nh_(nh), nh_private_(nh_private), have_camera_info_(false), ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),sync_(MySyncPolicy(500), ir_sub_, rgb_sub_)
 {
   // Set up a dynamic reconfigure server.
   // This should be done before reading parameter server values.
@@ -48,7 +76,18 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   dr_server_.setCallback(cb_);
 
   // Initialize subscribers
-  image_sub_ = nh_.subscribe("/camera/image_raw", 1, &MPENode::imageCallback, this);
+
+  //synchronize two image messages
+  //message_filters::Subscriber<sensor_msgs::Image> ir_sub(nh_, "/camera/image_raw",1);
+  //message_filters::Subscriber<sensor_msgs::Image> rgb_sub(nh_, "/camera/image_rgb",1);
+  //sync_ = message_filters::Synchronizer<MySyncPolicy>(MySyncPolicy(500), ir_sub, rgb_sub);
+
+  sync_.registerCallback(&MPENode::sync_callback_rgb_ir, this);
+  //sync_.registerCallback(boost::bind(&sync_callback_rgb_ir_extern, _1, _2));
+
+
+  //originally only subscribed to the ir topic
+  //image_sub_ = nh_.subscribe("/camera/image_raw", 1, &MPENode::imageCallback, this);
   camera_info_sub_ = nh_.subscribe("/camera/camera_info", 1, &MPENode::cameraInfoCallback, this);
 
   // Initialize pose publisher
@@ -109,6 +148,40 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
  */
 MPENode::~MPENode()
 {
+
+}
+
+
+
+void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
+
+	ROS_INFO("MPENode::sync_callback_rgb_ir");
+	// Check whether already received the camera calibration data
+	if (!have_camera_info_)
+	{
+	ROS_WARN("No camera info yet...");
+	return;
+	}
+
+	// Import the image from ROS message to OpenCV mat
+	cv_bridge::CvImagePtr cv_ptr, cv_rgb_ptr;
+	try
+	{
+		cv_ptr = cv_bridge::toCvCopy(ir_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
+		cv_rgb_ptr = cv_bridge::toCvCopy(rgb_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
+	}
+	catch (cv_bridge::Exception& e)
+	{
+		ROS_ERROR("cv_bridge exception: %s", e.what());
+		return;
+	}
+	cv::Mat ir = cv_ptr->image;
+	cv::Mat rgb = cv_rgb_ptr->image;
+
+	cv::imshow("IR",ir);
+	cv::imshow("RGB",rgb);
+	cv::waitKey(1);
+	return;
 
 }
 
