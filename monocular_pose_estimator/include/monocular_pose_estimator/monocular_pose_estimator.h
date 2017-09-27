@@ -56,6 +56,8 @@
 #include <message_filters/time_synchronizer.h>
 #include <sensor_msgs/Image.h>
 
+#include <tf/transform_listener.h>
+
 typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> MySyncPolicy;
 
 namespace monocular_pose_estimator
@@ -66,6 +68,8 @@ struct TrackedObject
 	std::string name_;
 	std::string mesh_path_;
 	XmlRpc::XmlRpcValue points_list;
+
+	List4DPoints object_points_camera_frame_;
 };
 
 class MPENode
@@ -79,7 +83,7 @@ private:
   ros::Publisher pose_pub_; //!< The ROS publisher that publishes the estimated pose.
 
   ros::Subscriber image_sub_; //!< The ROS subscriber to the raw camera image
-  ros::Subscriber camera_info_sub_; //!< The ROS subscriber to the camera info
+  ros::Subscriber camera_info_sub_, rgb_camera_info_sub_; //!< The ROS subscriber to the camera info
 
   ros::Publisher vis_pub_; //!< The ROS publisher that publishes markers positions in camera frame
 
@@ -88,8 +92,9 @@ private:
 
   geometry_msgs::PoseWithCovarianceStamped predicted_pose_; //!< The ROS message variable for the estimated pose and covariance of the object
 
-  bool have_camera_info_; //!< The boolean variable that indicates whether the camera calibration parameters have been obtained from the camera
-  sensor_msgs::CameraInfo cam_info_; //!< Variable to store the camera calibration parameters
+  bool have_camera_info_, rgb_have_camera_info_, tfs_requested_, busy_; //!< The boolean variable that indicates whether the camera calibration parameters have been obtained from the camera
+  sensor_msgs::CameraInfo cam_info_; //!< Variable to store the IR camera calibration parameters
+  sensor_msgs::CameraInfo rgb_cam_info_; //!< Variable to store the RGB camera calibration parameters
 
   PoseEstimator trackable_object_; //!< Declaration of the object whose pose will be estimated
 
@@ -97,6 +102,15 @@ private:
 
   message_filters::Subscriber<sensor_msgs::Image> ir_sub_, rgb_sub_;
   message_filters::Synchronizer<MySyncPolicy> sync_;
+
+  tf::TransformListener tf_listener_;
+
+  Eigen::Matrix4d rgb_T_ir; // expressed the pose of the IR frame in the RGB frame
+  Matrix3x4d camera_matrix_rgb;
+
+  void requestCameraTFs();
+
+  void processIR(cv::Mat& image, const sensor_msgs::Image::ConstPtr& ir_image_msg);
 
 
 public:
@@ -107,11 +121,13 @@ public:
 
   void cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg);
 
+  void rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg);
+
   void publishLEDs(const List4DPoints& object_points_camera_frame);
 
   void sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg);
 
-  void imageCallback(const sensor_msgs::Image::ConstPtr& image_msg);
+  void imageCallback(const sensor_msgs::Image::ConstPtr& ir_image_msg);
 
   void dynamicParametersCallback(monocular_pose_estimator::MonocularPoseEstimatorConfig &config, uint32_t level);
 };

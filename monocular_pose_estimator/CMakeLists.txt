@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.4.6)
 project(monocular_pose_estimator)
 
-set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS} -O3 -g")
+set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS} -O3")
 
 # search for everything we need to build the package
 find_package(catkin REQUIRED COMPONENTS
@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   monocular_pose_estimator_lib
   cmake_modules
   nodelet
+  tf_conversions
 )
 
 # since we need eigen search it as well

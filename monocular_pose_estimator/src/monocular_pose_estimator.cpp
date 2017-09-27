@@ -30,33 +30,7 @@
 #include "monocular_pose_estimator/monocular_pose_estimator.h"
 #include <visualization_msgs/MarkerArray.h>
 #include <visualization_msgs/Marker.h>
-
-
-void sync_callback_rgb_ir_extern(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
-
-	ROS_INFO("MPENode::sync_callback_rgb_ir");
-
-	// Import the image from ROS message to OpenCV mat
-	cv_bridge::CvImagePtr cv_ptr, cv_rgb_ptr;
-	try
-	{
-		cv_ptr = cv_bridge::toCvCopy(ir_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
-		cv_rgb_ptr = cv_bridge::toCvCopy(rgb_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
-	}
-	catch (cv_bridge::Exception& e)
-	{
-		ROS_ERROR("cv_bridge exception: %s", e.what());
-		return;
-	}
-	cv::Mat ir = cv_ptr->image;
-	cv::Mat rgb = cv_rgb_ptr->image;
-
-	cv::imshow("IR",ir);
-	cv::imshow("RGB",rgb);
-	cv::waitKey(1);
-	return;
-
-}
+#include <tf_conversions/tf_eigen.h>
 
 
 namespace monocular_pose_estimator
@@ -67,7 +41,7 @@ namespace monocular_pose_estimator
  *
  */
 MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
-  : nh_(nh), nh_private_(nh_private), have_camera_info_(false), ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),sync_(MySyncPolicy(500), ir_sub_, rgb_sub_)
+  : nh_(nh), nh_private_(nh_private), have_camera_info_(false), tfs_requested_(false), busy_(false), ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),sync_(MySyncPolicy(500), ir_sub_, rgb_sub_)
 {
   // Set up a dynamic reconfigure server.
   // This should be done before reading parameter server values.
@@ -89,6 +63,9 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   //originally only subscribed to the ir topic
   //image_sub_ = nh_.subscribe("/camera/image_raw", 1, &MPENode::imageCallback, this);
   camera_info_sub_ = nh_.subscribe("/camera/camera_info", 1, &MPENode::cameraInfoCallback, this);
+  rgb_camera_info_sub_ = nh_.subscribe("/camera/rgb_camera_info", 1, &MPENode::rgbCameraInfoCallback, this);
+
+
 
   // Initialize pose publisher
   pose_pub_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("estimated_pose", 1);
@@ -140,6 +117,7 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   }
   trackable_object_.setMarkerPositions(positions_of_markers_on_object);
   ROS_INFO("The number of markers on the object are: %d", (int )positions_of_markers_on_object.size());
+
 }
 
 /**
@@ -151,17 +129,51 @@ MPENode::~MPENode()
 
 }
 
+void MPENode::requestCameraTFs(){
+	//request the tf between IR and RGB optical frames
+	tf::StampedTransform transform;
+	try{
+
+		bool rc = false;
+		while( !have_camera_info_ && !rgb_have_camera_info_){
+			ros::Duration(0.03).sleep();
+		}
+
+		ROS_INFO_STREAM("requesting TF: "<<rgb_cam_info_.header.frame_id<<" - "<<cam_info_.header.frame_id);
+		tf_listener_.lookupTransform(rgb_cam_info_.header.frame_id, cam_info_.header.frame_id,
+							   ros::Time(0), transform);
+//	  if(!rc){
+//		  ROS_ERROR_STREAM("tf not available: "<<rgb_cam_info_.header.frame_id<<" "<<cam_info_.header.frame_id);
+//		  ros::shutdown();
+//		  exit(0);
+//	  }
+	  Eigen::Affine3d affine3D;
+	  tf::transformTFToEigen(tf::Transform(transform),affine3D);
+	  rgb_T_ir = affine3D.matrix();
+	  std::cout <<" requested TF rgb_T_ir="<<std::endl<<rgb_T_ir<<std::endl;
+	}
+	catch (tf::TransformException &ex) {
+	  ROS_ERROR("%s",ex.what());
+	  ros::Duration(1.0).sleep();
+	}
+}
 
 
 void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
 
 	ROS_INFO("MPENode::sync_callback_rgb_ir");
+
 	// Check whether already received the camera calibration data
-	if (!have_camera_info_)
+	if (!have_camera_info_ || !rgb_have_camera_info_)
 	{
-	ROS_WARN("No camera info yet...");
-	return;
+		ROS_WARN("No camera info yet...");
+		return;
 	}
+	if(!tfs_requested_){
+		  ROS_INFO("requesting TFs...");
+		  requestCameraTFs();
+		  tfs_requested_=true;
+	  }
 
 	// Import the image from ROS message to OpenCV mat
 	cv_bridge::CvImagePtr cv_ptr, cv_rgb_ptr;
@@ -178,9 +190,39 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
 	cv::Mat ir = cv_ptr->image;
 	cv::Mat rgb = cv_rgb_ptr->image;
 
+
+	//find the pose of the object based on the detections on the IR image
+	processIR(ir,ir_image_msg);
+	//now project back on the rgb image the estimated pose
+	//gets the 3D position of the markers in the IR camera optical frame
+
+	//need to transform to the RGB optical frame
+	List4DPoints markers_3D_rgb_frame;
+	List3DPoints markers_2D_rgb_frame;
+
+	std::cout <<" trackable_object_.getMarkerCameraFramePositions().size()="<<trackable_object_.getMarkerCameraFramePositions().size()<<std::endl;
+	markers_3D_rgb_frame.resize(trackable_object_.getMarkerCameraFramePositions().size());
+	markers_2D_rgb_frame.resize(trackable_object_.getMarkerCameraFramePositions().size());
+	for(int i=1; i< trackable_object_.getMarkerCameraFramePositions().size(); i++){
+		Eigen::Vector4d& marker_rgb_frame = markers_3D_rgb_frame[i];
+		Eigen::Vector4d& marker_ir_frame = trackable_object_.getMarkerCameraFramePositions()[i];
+		marker_rgb_frame = rgb_T_ir * marker_ir_frame;
+		std::cout <<"marker_ir_frame="<<marker_ir_frame<<std::endl;
+		std::cout <<"marker_rgb_frame="<<marker_rgb_frame<<std::endl;
+		std::cout <<"camera_matrix_rgb="<<camera_matrix_rgb<<std::endl;
+		//we can now project back to the RGB plane
+		Eigen::Vector3d marker_rgb_2D = camera_matrix_rgb *  marker_rgb_frame;
+		marker_rgb_2D(0) /= marker_rgb_2D(2);
+		marker_rgb_2D(1) /= marker_rgb_2D(2);
+		markers_2D_rgb_frame[i] = marker_rgb_2D;
+		std::cout <<"projected RGB coordinates="<<marker_rgb_2D(0)<<" "<<marker_rgb_2D(1)<<std::endl;
+		cv::Point2i paint_marker_point(marker_rgb_2D(0), marker_rgb_2D(1));
+		cv::circle(rgb, paint_marker_point, 10, CV_RGB(255, 0, 0), 2);
+	}
 	cv::imshow("IR",ir);
 	cv::imshow("RGB",rgb);
 	cv::waitKey(1);
+
 	return;
 
 }
@@ -211,8 +253,50 @@ void MPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
     trackable_object_.camera_distortion_coeffs_ = cam_info_.D;
 
     have_camera_info_ = true;
-    ROS_INFO("Camera calibration information obtained.");
+    ROS_INFO("IR Camera calibration information obtained.");
   }
+
+}
+
+
+/**
+ * The callback function that retrieves the camera calibration information
+ *
+ * \param msg the ROS message containing the camera calibration information
+ *
+ */
+void MPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
+{
+  if (!rgb_have_camera_info_)
+  {
+    rgb_cam_info_ = *msg;
+
+    // Calibrated camera
+    trackable_object_.rgb_camera_matrix_K_ = cv::Mat(3, 3, CV_64F);
+    trackable_object_.rgb_camera_matrix_K_.at<double>(0, 0) = rgb_cam_info_.K[0];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(0, 1) = rgb_cam_info_.K[1];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(0, 2) = rgb_cam_info_.K[2];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(1, 0) = rgb_cam_info_.K[3];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(1, 1) = rgb_cam_info_.K[4];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2) = rgb_cam_info_.K[5];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(2, 0) = rgb_cam_info_.K[6];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(2, 1) = rgb_cam_info_.K[7];
+    trackable_object_.rgb_camera_matrix_K_.at<double>(2, 2) = rgb_cam_info_.K[8];
+    trackable_object_.rgb_camera_distortion_coeffs_ = rgb_cam_info_.D;
+
+    rgb_have_camera_info_ = true;
+    ROS_INFO("RGB Camera calibration information obtained.");
+  }
+
+   for (int i=0; i<3; i++)
+   {
+     for (int j=0; j<3; j++)
+     {
+    	 camera_matrix_rgb(i, j) = trackable_object_.rgb_camera_matrix_K_.at<double>(i, j);
+     }
+     camera_matrix_rgb(i, 3) = 0.0;
+   }
+   std::cout<<"camera_matrix_rgb initialised="<<std::endl<<camera_matrix_rgb<<std::endl;
 
 }
 
@@ -252,12 +336,89 @@ void MPENode::publishLEDs(const List4DPoints& object_points_camera_frame){
 
 }
 
+
+/**
+ * Replicates the original callback function that is executed every time an IR image is received.
+ * It runs the main logic of the program.
+ *
+ * \param image_msg the ROS message containing the image to be processed
+ */
+void MPENode::processIR(cv::Mat& image, const sensor_msgs::Image::ConstPtr& ir_image_msg)
+{
+
+	// Get time at which the image was taken. This time is used to stamp the estimated pose and also calculate the position of where to search for the makers in the image
+	double time_to_predict = ir_image_msg->header.stamp.toSec();
+	const bool found_body_pose = trackable_object_.estimateBodyPose(image, time_to_predict);
+
+	if (found_body_pose) // Only output the pose, if the pose was updated (i.e. a valid pose was found).
+
+	{
+		//Eigen::Matrix4d transform = trackable_object.getPredictedPose();
+		Matrix6d cov = trackable_object_.getPoseCovariance();
+		Eigen::Matrix4d transform = trackable_object_.getPredictedPose();
+
+		ROS_DEBUG_STREAM("The transform: \n" << transform);
+		ROS_DEBUG_STREAM("The covariance: \n" << cov);
+
+		// Convert transform to PoseWithCovarianceStamped message
+		predicted_pose_.header.stamp = ir_image_msg->header.stamp;
+		predicted_pose_.pose.pose.position.x = transform(0, 3);
+		predicted_pose_.pose.pose.position.y = transform(1, 3);
+		predicted_pose_.pose.pose.position.z = transform(2, 3);
+		Eigen::Quaterniond orientation = Eigen::Quaterniond(transform.block<3, 3>(0, 0));
+		predicted_pose_.pose.pose.orientation.x = orientation.x();
+		predicted_pose_.pose.pose.orientation.y = orientation.y();
+		predicted_pose_.pose.pose.orientation.z = orientation.z();
+		predicted_pose_.pose.pose.orientation.w = orientation.w();
+
+		// Add covariance to PoseWithCovarianceStamped message
+		for (unsigned i = 0; i < 6; ++i)
+		{
+		  for (unsigned j = 0; j < 6; ++j)
+		  {
+			predicted_pose_.pose.covariance.elems[j + 6 * i] = cov(i, j);
+		  }
+		}
+
+		// Publish the pose
+		pose_pub_.publish(predicted_pose_);
+
+		//retrieve the position of the markers in the camera coordinate frame
+
+		publishLEDs(trackable_object_.getMarkerCameraFramePositions());
+
+	  }
+	  else
+	  { // If pose was not updated
+		ROS_WARN("Unable to resolve a pose.");
+	  }
+
+	  // publish visualization image
+	  if (image_pub_.getNumSubscribers() > 0)
+	  {
+		cv::Mat visualized_image = image.clone();
+		cv::cvtColor(visualized_image, visualized_image, CV_GRAY2RGB);
+		if (found_body_pose)
+		{
+		  trackable_object_.augmentImage(visualized_image);
+		}
+
+		// Publish image for visualization
+		cv_bridge::CvImage visualized_image_msg;
+		visualized_image_msg.header = ir_image_msg->header;
+		visualized_image_msg.encoding = sensor_msgs::image_encodings::BGR8;
+		visualized_image_msg.image = visualized_image;
+
+		image_pub_.publish(visualized_image_msg.toImageMsg());
+	  }
+}
+
 /**
  * The callback function that is executed every time an image is received. It runs the main logic of the program.
  *
  * \param image_msg the ROS message containing the image to be processed
  */
-void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
+void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& ir_image_msg)
 {  
   // Check whether already received the camera calibration data
   if (!have_camera_info_)
@@ -270,7 +431,7 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
   cv_bridge::CvImagePtr cv_ptr;
   try
   {    
-    cv_ptr = cv_bridge::toCvCopy(image_msg/*, sensor_msgs::image_encodings::MONO8*/);
+    cv_ptr = cv_bridge::toCvCopy(ir_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
   }
   catch (cv_bridge::Exception& e)
   {
@@ -281,7 +442,7 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
 
 
   // Get time at which the image was taken. This time is used to stamp the estimated pose and also calculate the position of where to search for the makers in the image
-  double time_to_predict = image_msg->header.stamp.toSec();
+  double time_to_predict = ir_image_msg->header.stamp.toSec();
 
   const bool found_body_pose = trackable_object_.estimateBodyPose(image, time_to_predict);
   if (found_body_pose) // Only output the pose, if the pose was updated (i.e. a valid pose was found).
@@ -294,7 +455,7 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
     ROS_DEBUG_STREAM("The covariance: \n" << cov);
 
     // Convert transform to PoseWithCovarianceStamped message
-    predicted_pose_.header.stamp = image_msg->header.stamp;
+    predicted_pose_.header.stamp = ir_image_msg->header.stamp;
     predicted_pose_.pose.pose.position.x = transform(0, 3);
     predicted_pose_.pose.pose.position.y = transform(1, 3);
     predicted_pose_.pose.pose.position.z = transform(2, 3);
@@ -338,7 +499,7 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& image_msg)
 
     // Publish image for visualization
     cv_bridge::CvImage visualized_image_msg;
-    visualized_image_msg.header = image_msg->header;
+    visualized_image_msg.header = ir_image_msg->header;
     visualized_image_msg.encoding = sensor_msgs::image_encodings::BGR8;
     visualized_image_msg.image = visualized_image;
 
