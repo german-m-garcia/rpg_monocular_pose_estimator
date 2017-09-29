@@ -73,6 +73,7 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   // Initialize image publisher for visualization
   image_transport::ImageTransport image_transport(nh_);
   image_pub_ = image_transport.advertise("image_with_detections", 1);
+  rgb_image_pub_ = image_transport.advertise("rgb_image_with_detections", 1);
 
   // Create the marker positions from the test points
   List4DPoints positions_of_markers_on_object;
@@ -203,9 +204,9 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
 	std::cout <<" trackable_object_.getMarkerCameraFramePositions().size()="<<trackable_object_.getMarkerCameraFramePositions().size()<<std::endl;
 	markers_3D_rgb_frame.resize(trackable_object_.getMarkerCameraFramePositions().size());
 	markers_2D_rgb_frame.resize(trackable_object_.getMarkerCameraFramePositions().size());
-	for(int i=1; i< trackable_object_.getMarkerCameraFramePositions().size(); i++){
+	for(int i=0; i< trackable_object_.getMarkerCameraFramePositions().size(); i++){
 		Eigen::Vector4d& marker_rgb_frame = markers_3D_rgb_frame[i];
-		Eigen::Vector4d& marker_ir_frame = trackable_object_.getMarkerCameraFramePositions()[i];
+		Eigen::Vector4d marker_ir_frame = trackable_object_.getMarkerCameraFramePositions()[i];
 		marker_rgb_frame = rgb_T_ir * marker_ir_frame;
 		std::cout <<"marker_ir_frame="<<marker_ir_frame<<std::endl;
 		std::cout <<"marker_rgb_frame="<<marker_rgb_frame<<std::endl;
@@ -222,6 +223,15 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
 	cv::imshow("IR",ir);
 	cv::imshow("RGB",rgb);
 	cv::waitKey(1);
+	{
+		// Publish image for visualization
+		cv_bridge::CvImage visualized_image_msg;
+		visualized_image_msg.header = rgb_image_msg->header;
+		visualized_image_msg.encoding = sensor_msgs::image_encodings::BGR8;
+		visualized_image_msg.image = rgb;
+
+		rgb_image_pub_.publish(visualized_image_msg.toImageMsg());
+	}
 
 	return;
 

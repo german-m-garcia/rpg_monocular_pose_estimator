@@ -79,7 +79,7 @@ private:
   ros::NodeHandle nh_;
   ros::NodeHandle nh_private_;
 
-  image_transport::Publisher image_pub_; //!< The ROS image publisher that publishes the visualisation image
+  image_transport::Publisher image_pub_, rgb_image_pub_; //!< The ROS image publisher that publishes the visualisation image
   ros::Publisher pose_pub_; //!< The ROS publisher that publishes the estimated pose.
 
   ros::Subscriber image_sub_; //!< The ROS subscriber to the raw camera image

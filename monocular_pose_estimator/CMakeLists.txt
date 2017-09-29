@@ -55,15 +55,15 @@ target_link_libraries(monocular_pose_estimator
  )
 
 # make the nodelet
-add_library(monocular_pose_estimator_nodelet
-  src/nodelet.cpp src/monocular_pose_estimator.cpp
-)
+#add_library(monocular_pose_estimator_nodelet
+#  src/nodelet.cpp src/monocular_pose_estimator.cpp
+#)
 
-add_dependencies(monocular_pose_estimator_nodelet ${catkin_EXPORTED_TARGETS}  ${PROJECT_NAME}_gencfg)
+#add_dependencies(monocular_pose_estimator_nodelet ${catkin_EXPORTED_TARGETS}  ${PROJECT_NAME}_gencfg)
 
-target_link_libraries(monocular_pose_estimator_nodelet
-   yaml-cpp
-   ${catkin_LIBRARIES}
-   ${OpenCV_LIBRARIES}
- )
+#target_link_libraries(monocular_pose_estimator_nodelet
+#   yaml-cpp
+#  ${catkin_LIBRARIES}
+#   ${OpenCV_LIBRARIES}
+# )
  
