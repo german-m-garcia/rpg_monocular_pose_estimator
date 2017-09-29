@@ -87,6 +87,10 @@ public:
   cv::Mat rgb_camera_matrix_K_; //!< Variable to store the camera matrix as an OpenCV matrix
   std::vector<double> rgb_camera_distortion_coeffs_; //!< Variable to store the camera distortion parameters
 
+  cv::Mat right_ir_camera_matrix_K_; //!< Variable to store the camera matrix as an OpenCV matrix
+  std::vector<double> right_ir_camera_distortion_coeffs_; //!< Variable to store the camera distortion parameters
+
+
   int detection_threshold_value_; //!< The current threshold value for the image for LED detection
   double gaussian_sigma_; //!< The current standard deviation of the Gaussian that will be applied to the thresholded image for LED detection
   double min_blob_area_; //!< The the minimum blob area (in pixels squared) that will be detected as a blob/LED. Areas having an area smaller than this will not be detected as LEDs.

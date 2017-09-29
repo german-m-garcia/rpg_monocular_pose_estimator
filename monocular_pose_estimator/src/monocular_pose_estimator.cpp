@@ -41,7 +41,9 @@ namespace monocular_pose_estimator
  *
  */
 MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
-  : nh_(nh), nh_private_(nh_private), have_camera_info_(false), tfs_requested_(false), busy_(false), ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),sync_(MySyncPolicy(500), ir_sub_, rgb_sub_)
+  : nh_(nh), nh_private_(nh_private), have_camera_info_(false), rgb_have_camera_info_(false), right_ir_have_camera_info_(false), tfs_requested_(false), busy_(false),
+	ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),right_ir_sub_(nh_, "/camera/image_right_ir",1),
+	sync_(MySyncPolicy(10), ir_sub_, right_ir_sub_, rgb_sub_)
 {
   // Set up a dynamic reconfigure server.
   // This should be done before reading parameter server values.
@@ -56,14 +58,16 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   //message_filters::Subscriber<sensor_msgs::Image> rgb_sub(nh_, "/camera/image_rgb",1);
   //sync_ = message_filters::Synchronizer<MySyncPolicy>(MySyncPolicy(500), ir_sub, rgb_sub);
 
-  sync_.registerCallback(&MPENode::sync_callback_rgb_ir, this);
+  sync_.registerCallback(&MPENode::sync_callback_rgb_stereo_ir, this);
   //sync_.registerCallback(boost::bind(&sync_callback_rgb_ir_extern, _1, _2));
 
 
   //originally only subscribed to the ir topic
   //image_sub_ = nh_.subscribe("/camera/image_raw", 1, &MPENode::imageCallback, this);
   camera_info_sub_ = nh_.subscribe("/camera/camera_info", 1, &MPENode::cameraInfoCallback, this);
-  rgb_camera_info_sub_ = nh_.subscribe("/camera/rgb_camera_info", 1, &MPENode::rgbCameraInfoCallback, this);
+  rgb_camera_info_sub_ = nh_.subscribe("/camera/image_rgb_camera_info", 1, &MPENode::rgbCameraInfoCallback, this);
+  right_ir_camera_info_sub_ = nh_.subscribe("/camera/image_right_ir_camera_info", 1, &MPENode::rightIRCameraInfoCallback, this);
+
 
 
 
@@ -159,6 +163,45 @@ void MPENode::requestCameraTFs(){
 	}
 }
 
+void MPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
+
+	ROS_INFO("MPENode::sync_callback_rgb_stereo_ir");
+
+	// Check whether already received the camera calibration data
+	if (!have_camera_info_ || !rgb_have_camera_info_|| !right_ir_have_camera_info_)
+	{
+		ROS_WARN("No camera infos yet...");
+		return;
+	}
+	if(!tfs_requested_){
+		  ROS_INFO("requesting TFs...");
+		  requestCameraTFs();
+		  tfs_requested_=true;
+	  }
+
+	// Import the image from ROS message to OpenCV mat
+	cv_bridge::CvImagePtr cv_ptr, cv_rgb_ptr, cv_right_ir_ptr;
+	try
+	{
+		cv_ptr = cv_bridge::toCvCopy(ir_image_msg/*, sensor_msgs::image_encodings::MONO8*/);
+		cv_rgb_ptr = cv_bridge::toCvCopy(rgb_image_msg, sensor_msgs::image_encodings::BGR8);
+		cv_right_ir_ptr= cv_bridge::toCvCopy(ir_right_image_msg);
+	}
+	catch (cv_bridge::Exception& e)
+	{
+		ROS_ERROR("cv_bridge exception: %s", e.what());
+		return;
+	}
+	cv::Mat ir = cv_ptr->image;
+	cv::Mat right_ir = cv_right_ir_ptr->image;
+	cv::Mat rgb = cv_rgb_ptr->image;
+
+	cv::imshow("LEFT IR",ir);
+	cv::imshow("RIGHT IR",right_ir);
+	cv::imshow("RGB",rgb);
+	cv::waitKey(1);
+}
+
 
 void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
 
@@ -210,9 +253,9 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
 		marker_rgb_frame = rgb_T_ir * marker_ir_frame;
 		std::cout <<"marker_ir_frame="<<marker_ir_frame<<std::endl;
 		std::cout <<"marker_rgb_frame="<<marker_rgb_frame<<std::endl;
-		std::cout <<"camera_matrix_rgb="<<camera_matrix_rgb<<std::endl;
+		std::cout <<"camera_matrix_rgb="<<camera_matrix_rgb_<<std::endl;
 		//we can now project back to the RGB plane
-		Eigen::Vector3d marker_rgb_2D = camera_matrix_rgb *  marker_rgb_frame;
+		Eigen::Vector3d marker_rgb_2D = camera_matrix_rgb_ *  marker_rgb_frame;
 		marker_rgb_2D(0) /= marker_rgb_2D(2);
 		marker_rgb_2D(1) /= marker_rgb_2D(2);
 		markers_2D_rgb_frame[i] = marker_rgb_2D;
@@ -269,6 +312,42 @@ void MPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
 }
 
 
+void MPENode::rightIRCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg){
+
+
+	if (!right_ir_have_camera_info_)
+	{
+		right_ir_cam_info_ = *msg;
+
+		// Calibrated camera
+		trackable_object_.right_ir_camera_matrix_K_ = cv::Mat(3, 3, CV_64F);
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(0, 0) = right_ir_cam_info_.K[0];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(0, 1) = right_ir_cam_info_.K[1];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(0, 2) = right_ir_cam_info_.K[2];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(1, 0) = right_ir_cam_info_.K[3];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(1, 1) = right_ir_cam_info_.K[4];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(1, 2) = right_ir_cam_info_.K[5];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(2, 0) = right_ir_cam_info_.K[6];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(2, 1) = right_ir_cam_info_.K[7];
+		trackable_object_.right_ir_camera_matrix_K_.at<double>(2, 2) = right_ir_cam_info_.K[8];
+		trackable_object_.right_ir_camera_distortion_coeffs_ = right_ir_cam_info_.D;
+
+		right_ir_have_camera_info_ = true;
+		ROS_INFO("Right IR Camera calibration information obtained.");
+	}
+
+	for (int i=0; i<3; i++)
+	{
+	 for (int j=0; j<3; j++)
+	 {
+		 camera_matrix_right_ir_(i, j) = trackable_object_.right_ir_camera_matrix_K_.at<double>(i, j);
+	 }
+	 camera_matrix_right_ir_(i, 3) = 0.0;
+	}
+	std::cout<<"camera_matrix_right_ir_ initialised="<<std::endl<<camera_matrix_right_ir_<<std::endl;
+
+}
+
 /**
  * The callback function that retrieves the camera calibration information
  *
@@ -277,36 +356,42 @@ void MPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
  */
 void MPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
 {
-  if (!rgb_have_camera_info_)
-  {
-    rgb_cam_info_ = *msg;
 
-    // Calibrated camera
-    trackable_object_.rgb_camera_matrix_K_ = cv::Mat(3, 3, CV_64F);
-    trackable_object_.rgb_camera_matrix_K_.at<double>(0, 0) = rgb_cam_info_.K[0];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(0, 1) = rgb_cam_info_.K[1];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(0, 2) = rgb_cam_info_.K[2];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(1, 0) = rgb_cam_info_.K[3];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(1, 1) = rgb_cam_info_.K[4];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2) = rgb_cam_info_.K[5];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(2, 0) = rgb_cam_info_.K[6];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(2, 1) = rgb_cam_info_.K[7];
-    trackable_object_.rgb_camera_matrix_K_.at<double>(2, 2) = rgb_cam_info_.K[8];
-    trackable_object_.rgb_camera_distortion_coeffs_ = rgb_cam_info_.D;
 
-    rgb_have_camera_info_ = true;
-    ROS_INFO("RGB Camera calibration information obtained.");
-  }
+	if (!rgb_have_camera_info_)
+	{
+		rgb_cam_info_ = *msg;
 
-   for (int i=0; i<3; i++)
+		// Calibrated camera
+		trackable_object_.rgb_camera_matrix_K_ = cv::Mat(3, 3, CV_64F);
+		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 0) = rgb_cam_info_.K[0];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 1) = rgb_cam_info_.K[1];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 2) = rgb_cam_info_.K[2];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 0) = rgb_cam_info_.K[3];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 1) = rgb_cam_info_.K[4];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2) = rgb_cam_info_.K[5];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(2, 0) = rgb_cam_info_.K[6];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(2, 1) = rgb_cam_info_.K[7];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(2, 2) = rgb_cam_info_.K[8];
+		trackable_object_.rgb_camera_distortion_coeffs_ = rgb_cam_info_.D;
+
+		rgb_have_camera_info_ = true;
+		ROS_INFO("RGB Camera calibration information obtained.");
+	}
+
+
+
+	std::cout <<"trackable_object_.rgb_camera_matrix_K_.size()= "<<trackable_object_.rgb_camera_matrix_K_.size()<<std::endl;
+	std::cout <<"camera_matrix_rgb_="<<camera_matrix_rgb_<<std::endl;
+	for (int i=0; i<3; i++)
    {
      for (int j=0; j<3; j++)
      {
-    	 camera_matrix_rgb(i, j) = trackable_object_.rgb_camera_matrix_K_.at<double>(i, j);
+    	 camera_matrix_rgb_(i, j) = trackable_object_.rgb_camera_matrix_K_.at<double>(i, j);
      }
-     camera_matrix_rgb(i, 3) = 0.0;
+     camera_matrix_rgb_(i, 3) = 0.0;
    }
-   std::cout<<"camera_matrix_rgb initialised="<<std::endl<<camera_matrix_rgb<<std::endl;
+   std::cout<<"camera_matrix_rgb initialised="<<std::endl<<camera_matrix_rgb_<<std::endl;
 
 }
 
