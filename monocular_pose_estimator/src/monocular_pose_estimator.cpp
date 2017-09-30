@@ -165,6 +165,7 @@ void MPENode::requestCameraTFs(){
 
 void MPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
 
+	double time_to_predict = ir_image_msg->header.stamp.toSec();
 	ROS_INFO("MPENode::sync_callback_rgb_stereo_ir");
 
 	// Check whether already received the camera calibration data
@@ -199,10 +200,14 @@ void MPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 	cv::imshow("LEFT IR",ir);
 	cv::imshow("RIGHT IR",right_ir);
 	cv::imshow("RGB",rgb);
+	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict);
 	cv::waitKey(1);
 }
 
 
+/*
+ * callback function for IR left + RGB image
+ */
 void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
 
 	ROS_INFO("MPENode::sync_callback_rgb_ir");

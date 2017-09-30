@@ -66,6 +66,28 @@ List4DPoints PoseEstimator::getMarkerCameraFramePositions()
   return object_points_camera_frame_;
 }
 
+
+bool PoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict){
+	List2DPoints detected_led_positions, detected_led_positions2;
+	bool right = true;
+	setPredictedTime(time_to_predict);
+
+	region_of_interest_ = cv::Rect(0, 0, ir.cols, ir.rows);
+
+	// Do detection of LEDs in image
+	LEDDetector::findLeds(ir, region_of_interest_, detection_threshold_value_, gaussian_sigma_, min_blob_area_,
+						  max_blob_area_, max_width_height_distortion_, max_circular_distortion_,
+						  detected_led_positions, distorted_detection_centers_, camera_matrix_K_,
+						  camera_distortion_coeffs_, !right);
+
+	// Do detection of LEDs in image
+	LEDDetector::findLeds(ir2, region_of_interest_, detection_threshold_value_, gaussian_sigma_, min_blob_area_,
+						  max_blob_area_, max_width_height_distortion_, max_circular_distortion_,
+						  detected_led_positions, distorted_detection_centers_, right_ir_camera_matrix_K_,
+						  right_ir_camera_distortion_coeffs_, right);
+
+}
+
 bool PoseEstimator::estimateBodyPose(cv::Mat image, double time_to_predict)
 {
   pose_updated_ = false;

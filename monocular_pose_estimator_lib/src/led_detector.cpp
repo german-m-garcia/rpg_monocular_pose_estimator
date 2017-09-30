@@ -38,14 +38,17 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
                            const double &min_blob_area, const double &max_blob_area,
                            const double &max_width_height_distortion, const double &max_circular_distortion,
                            List2DPoints &pixel_positions, std::vector<cv::Point2f> &distorted_detection_centers,
-                           const cv::Mat &camera_matrix_K, const std::vector<double> &camera_distortion_coeffs)
+                           const cv::Mat &camera_matrix_K, const std::vector<double> &camera_distortion_coeffs, bool right_ir)
 {
   // Threshold the image
   cv::Mat bw_image;
   //cv::threshold(image, bwImage, threshold_value, 255, cv::THRESH_BINARY);
   cv::threshold(image(ROI), bw_image, threshold_value, 255, cv::THRESH_TOZERO);
   
-  cv::imshow("thresholded img",bw_image);
+  if(right_ir)
+	  cv::imshow("Right IR thresholded",bw_image);
+  else
+	  cv::imshow("Left IR thresholded",bw_image);
   cv::waitKey(1);
 
   // Gaussian blur the image
@@ -107,7 +110,10 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
 		 //PRINT THE NUMBER AS WELL
 		 std::string text = std::to_string((int)distorted_points.size());
 		 cv::putText(drawing, text, mc, 2, 1, color );
-		 cv::imshow( "contours", drawing );
+		 if(right_ir)
+			 cv::imshow( "Right IR contours", drawing );
+		 else
+			 cv::imshow( "Left IR contours", drawing );
 		 std::cout <<" detection #"<<distorted_points.size()<<std::endl;
 		 //cv::waitKey(0);
 	   }
@@ -150,7 +156,7 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
       }
 
     }
-    cv::imshow("contours and points",drawing);
+    //cv::imshow("contours and points",drawing);
     cv::waitKey(1);
   }
 }

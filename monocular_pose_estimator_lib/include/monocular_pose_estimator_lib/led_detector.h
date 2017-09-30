@@ -85,7 +85,7 @@ public:
                        const double &min_blob_area, const double &max_blob_area,
                        const double &max_width_height_distortion, const double &max_circular_distortion,
                        List2DPoints &pixel_positions, std::vector<cv::Point2f> &distorted_detection_centers,
-                       const cv::Mat &camera_matrix_K, const std::vector<double> &camera_distortion_coeffs);
+                       const cv::Mat &camera_matrix_K, const std::vector<double> &camera_distortion_coeffs, bool right_ir = false);
 
   /**
    * Calculates the region of interest (ROI) in the distorted image in which the points lie.
