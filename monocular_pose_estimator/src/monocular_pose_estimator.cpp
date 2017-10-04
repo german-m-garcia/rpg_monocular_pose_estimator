@@ -43,7 +43,7 @@ namespace monocular_pose_estimator
 MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   : nh_(nh), nh_private_(nh_private), have_camera_info_(false), rgb_have_camera_info_(false), right_ir_have_camera_info_(false), tfs_requested_(false), busy_(false),
 	ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),right_ir_sub_(nh_, "/camera/image_right_ir",1),
-	sync_(MySyncPolicy(10), ir_sub_, right_ir_sub_, rgb_sub_)
+	sync_two_(SyncPolicyTwo(10), ir_sub_, rgb_sub_)
 {
   // Set up a dynamic reconfigure server.
   // This should be done before reading parameter server values.
@@ -58,8 +58,8 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   //message_filters::Subscriber<sensor_msgs::Image> rgb_sub(nh_, "/camera/image_rgb",1);
   //sync_ = message_filters::Synchronizer<MySyncPolicy>(MySyncPolicy(500), ir_sub, rgb_sub);
 
-  sync_.registerCallback(&MPENode::sync_callback_rgb_stereo_ir, this);
-  //sync_.registerCallback(boost::bind(&sync_callback_rgb_ir_extern, _1, _2));
+  sync_two_.registerCallback(&MPENode::sync_callback_rgb_ir, this);
+  //sync_three_.registerCallback(&MPENode::sync_callback_rgb_stereo_ir, this);
 
 
   //originally only subscribed to the ir topic
@@ -86,17 +86,15 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   vis_pub_ = nh_.advertise<visualization_msgs::Marker>( "LEDs", 5 );
 
   // Read the object mesh file
-  std::string object_config;
-  if(! nh_private.getParam("object_mesh",object_config)){
-	  ROS_ERROR("%s: No reference file containing the object mesh. Use the 'object_mesh' parameter in the launch file.",
-		        ros::this_node::getName().c_str());
-	  ros::shutdown();
+  if (nh_private_.getParam("object_mesh", mesh_path_))
+  {
+	ROS_INFO("Got param: %s", mesh_path_.c_str());
   }
-  else {
-
-	  ROS_INFO("Read object mesh file: %s", object_config);
-
+  else
+  {
+	ROS_ERROR("Failed to get param 'object_mesh'");
   }
+
 
   // Read in the marker positions from the YAML parameter file
   XmlRpc::XmlRpcValue points_list;
@@ -268,8 +266,27 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
 		cv::Point2i paint_marker_point(marker_rgb_2D(0), marker_rgb_2D(1));
 		cv::circle(rgb, paint_marker_point, 10, CV_RGB(255, 0, 0), 2);
 	}
+	//render the object model
+	cv::Mat renderedModel, overlay;
+	cv::Mat pose = cv::Mat::eye(4,4,CV_32FC1);
+	for(int i=0;i<pose.rows; i++)
+		for(int j=0;j<pose.cols; j++){
+			pose.at<float>(i,j) = trackable_object_.getPredictedPose()(i,j);
+		}
+//	pose.at<float>(0,3) = trackable_object_.getPredictedPose()(0,3) * 100.;
+//	pose.at<float>(1,3) = trackable_object_.getPredictedPose()(1,3) * 100.;
+//	pose.at<float>(2,3) = trackable_object_.getPredictedPose()(2,3) * 100.;
+	std::cout <<"predicted pose = "<<std::endl<<pose<<std::endl;
+	renderer_.render(renderedModel, pose);
+
+
 	cv::imshow("IR",ir);
 	cv::imshow("RGB",rgb);
+	cv::imshow("Render", renderedModel);
+	//blend the rendered image and the RGB frame
+	double alpha = 0.5, beta = ( 1.0 - alpha );
+	addWeighted( rgb, alpha, renderedModel, beta, 0.0, overlay);
+	cv::imshow("Overlay",overlay);
 	cv::waitKey(1);
 	{
 		// Publish image for visualization
@@ -369,19 +386,33 @@ void MPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg
 
 		// Calibrated camera
 		trackable_object_.rgb_camera_matrix_K_ = cv::Mat(3, 3, CV_64F);
-		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 0) = rgb_cam_info_.K[0];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 0) = rgb_cam_info_.K[0]; //fx
 		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 1) = rgb_cam_info_.K[1];
-		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 2) = rgb_cam_info_.K[2];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(0, 2) = rgb_cam_info_.K[2]; //cx
 		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 0) = rgb_cam_info_.K[3];
-		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 1) = rgb_cam_info_.K[4];
-		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2) = rgb_cam_info_.K[5];
+		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 1) = rgb_cam_info_.K[4]; //fy
+		trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2) = rgb_cam_info_.K[5]; //cy
 		trackable_object_.rgb_camera_matrix_K_.at<double>(2, 0) = rgb_cam_info_.K[6];
 		trackable_object_.rgb_camera_matrix_K_.at<double>(2, 1) = rgb_cam_info_.K[7];
 		trackable_object_.rgb_camera_matrix_K_.at<double>(2, 2) = rgb_cam_info_.K[8];
-		trackable_object_.rgb_camera_distortion_coeffs_ = rgb_cam_info_.D;
+		trackable_object_.rgb_camera_distortion_coeffs_ = rgb_cam_info_.D;			  //distortion coefficients
 
 		rgb_have_camera_info_ = true;
 		ROS_INFO("RGB Camera calibration information obtained.");
+
+		//initialise the renderer
+		for(int i=0;i<3;i++){
+			for(int j=0;j<3;j++){
+				std::cout <<"i,j="<<i<<","<<j<<" = "<<trackable_object_.rgb_camera_matrix_K_.at<double>(i, j)<<std::endl;
+			}
+		}
+		double fx = trackable_object_.rgb_camera_matrix_K_.at<double>(0, 0);
+		double fy = trackable_object_.rgb_camera_matrix_K_.at<double>(1, 1);
+		double cx = trackable_object_.rgb_camera_matrix_K_.at<double>(0, 2);
+		double cy = trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2);
+
+		renderer_.init(fx, fy, cx, cy,  rgb_cam_info_.D, rgb_cam_info_.width, rgb_cam_info_.height, mesh_path_);
+
 	}
 
 

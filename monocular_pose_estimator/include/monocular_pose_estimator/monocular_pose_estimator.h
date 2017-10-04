@@ -57,8 +57,10 @@
 #include <sensor_msgs/Image.h>
 
 #include <tf/transform_listener.h>
+#include <GLRenderer/renderLib.h>
 
-typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image> MySyncPolicy;
+typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image> SyncPolicyThree;
+typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicyTwo;
 
 namespace monocular_pose_estimator
 {
@@ -102,12 +104,17 @@ private:
   TrackedObject tracked_object;
 
   message_filters::Subscriber<sensor_msgs::Image> ir_sub_, rgb_sub_, right_ir_sub_;
-  message_filters::Synchronizer<MySyncPolicy> sync_;
+  //message_filters::Synchronizer<SyncPolicyThree> sync_three_;
+  message_filters::Synchronizer<SyncPolicyTwo> sync_two_;
 
   tf::TransformListener tf_listener_;
 
   Eigen::Matrix4d rgb_T_ir; // expressed the pose of the IR frame in the RGB frame
   Matrix3x4d camera_matrix_rgb_, camera_matrix_right_ir_;
+
+  std::string mesh_path_;
+
+  RenderLib renderer_;
 
   void requestCameraTFs();
 

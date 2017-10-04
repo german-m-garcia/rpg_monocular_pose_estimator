@@ -12,9 +12,10 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   geometry_msgs
   monocular_pose_estimator_lib
+  GLRenderer
   cmake_modules
   nodelet
-  tf_conversions
+  tf_conversions  
 )
 
 # since we need eigen search it as well
@@ -23,6 +24,8 @@ find_package(Eigen REQUIRED)
 
 # Add opencv
 find_package(OpenCV REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(GLUT REQUIRED)
 
 # Generate the reconfigure options
 generate_dynamic_reconfigure_options(cfg/MonocularPoseEstimator.cfg)
@@ -30,8 +33,8 @@ generate_dynamic_reconfigure_options(cfg/MonocularPoseEstimator.cfg)
 # export the dependencies of this package for who ever depends on us
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS roscpp cv_bridge image_transport dynamic_reconfigure sensor_msgs geometry_msgs monocular_pose_estimator_lib nodelet
-  DEPENDS eigen OpenCV
+  CATKIN_DEPENDS roscpp cv_bridge image_transport dynamic_reconfigure sensor_msgs geometry_msgs monocular_pose_estimator_lib GLRenderer nodelet
+  DEPENDS eigen OpenCV glut opengl
 )
 
 # tell catkin where to find the headers for this project
@@ -52,6 +55,8 @@ target_link_libraries(monocular_pose_estimator
    yaml-cpp
    ${catkin_LIBRARIES}
    ${OpenCV_LIBRARIES}
+   ${OPENGL_LIBRARIES}
+   ${GLUT_LIBRARY}
  )
 
 # make the nodelet

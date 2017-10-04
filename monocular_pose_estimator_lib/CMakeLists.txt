@@ -7,6 +7,7 @@ find_package(catkin REQUIRED COMPONENTS roscpp rospy cmake_modules)
 find_package(Eigen REQUIRED)
 find_package(OpenCV REQUIRED)
 
+
 catkin_package(
   INCLUDE_DIRS include
   DEPENDS eigen opencv

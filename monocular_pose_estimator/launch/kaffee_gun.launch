@@ -27,7 +27,7 @@
 			
 			
 			<rosparam command="load" file="$(arg marker_positions_file)"/>
-			<param name= "object_mesh" value = "$(find system_setup)/meshes/kaffee_aligned_scaled.obj" />
+			<param name= "object_mesh" value = "$(find system_setup)/meshes/kaffee_aligned_scaled_meters.obj" />
 			<param name= "threshold_value" value = "220" />
 			<param name= "gaussian_sigma" value = "0.6" />
 			<param name= "min_blob_area" value = "15" />
