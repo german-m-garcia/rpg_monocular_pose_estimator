@@ -28,6 +28,7 @@
 
 #include "monocular_pose_estimator_lib/pose_estimator.h"
 #include "ros/ros.h"
+#include "hungarian/hungarian.h"
 
 namespace monocular_pose_estimator
 {
@@ -66,9 +67,39 @@ List4DPoints PoseEstimator::getMarkerCameraFramePositions()
   return object_points_camera_frame_;
 }
 
+void PoseEstimator::permute(std::vector<int>& array,int i,int length) {
 
-bool PoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict){
-	List2DPoints detected_led_positions, detected_led_positions2;
+	if (length == i){
+		for (auto elem: array)
+		  std::cout << elem << ' ';
+		return;
+	}
+
+	int j = i;
+	for (j = i; j < length; j++) {
+
+		std::swap(array[i],array[j]);
+		permute(array,i+1,length);
+		std::swap(array[i],array[j]);
+	}
+	return;
+}
+
+
+//double PoseEstimator::computeCost(){
+//
+//}
+
+/*
+ * returns the detected undistorted LED positions in each IR stereo image
+ * @ir: the left IR image
+ * @ir2: the right IR image
+ * @time_to_predict: allowed time to process
+ * @detected_led_positions: the undistorted pixel coordinates of the LEDs in the left IR image
+ * @detected_led_positions2: the undistorted pixel coordinates of the LEDs in the right IR image
+ */
+bool PoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2){
+
 	bool right = true;
 	setPredictedTime(time_to_predict);
 
@@ -83,9 +114,89 @@ bool PoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to
 	// Do detection of LEDs in image
 	LEDDetector::findLeds(ir2, region_of_interest_, detection_threshold_value_, gaussian_sigma_, min_blob_area_,
 						  max_blob_area_, max_width_height_distortion_, max_circular_distortion_,
-						  detected_led_positions, distorted_detection_centers_, right_ir_camera_matrix_K_,
+						  detected_led_positions2, distorted_detection_centers_, right_ir_camera_matrix_K_,
 						  right_ir_camera_distortion_coeffs_, right);
 
+	//create a confusion matrix with the distances between the detections
+	cv::Mat confusion_distances_left = cv::Mat::zeros(detected_led_positions.size(), detected_led_positions2.size(), CV_32FC2);
+	cv::Mat confusion_distances_right = cv::Mat::zeros(detected_led_positions.size(), detected_led_positions2.size(), CV_32FC2);
+
+	//iterate for each detection in the left image
+	for(int i=0; i< detected_led_positions.size(); i++){
+		Eigen::Vector2d& p_left = detected_led_positions(i);
+		for(int j=i; j< detected_led_positions.size(); j++){
+			Eigen::Vector2d& p_left_other = detected_led_positions(j);
+			confusion_distances_left.at<cv::Vec2f>(i,j)[0] = p_left[0] - p_left_other[0];
+			confusion_distances_left.at<cv::Vec2f>(i,j)[1] = p_left[1] - p_left_other[1];
+		}
+	}
+	for(int i=0; i< detected_led_positions2.size(); i++){
+		Eigen::Vector2d& p_right = detected_led_positions2(i);
+		for(int j=i; j< detected_led_positions2.size(); j++){
+			Eigen::Vector2d& p_right_other = detected_led_positions2(j);
+			confusion_distances_right.at<cv::Vec2f>(i,j)[0] = p_right[0] - p_right_other[0];
+			confusion_distances_right.at<cv::Vec2f>(i,j)[1] = p_right[1] - p_right_other[1];
+		}
+	}
+
+	std::cout <<"LED left histogram="<<std::endl<<confusion_distances_left<<std::endl;
+	std::cout <<"LED right histogram="<<std::endl<<confusion_distances_right<<std::endl;
+
+
+	//print the points
+	for(int i=0; i< detected_led_positions.size(); i++){
+			Eigen::Vector2d& p_left = detected_led_positions(i);
+			std::cout <<"Left point #"<<i<<" = "<<p_left<<std::endl;
+	}
+	for(int i=0; i< detected_led_positions2.size(); i++){
+			Eigen::Vector2d& p_right = detected_led_positions2(i);
+			std::cout <<"Right point #"<<i<<" = "<<p_right<<std::endl;
+	}
+	std::vector<int> matches(detected_led_positions2.size());
+
+	getBestMatch(detected_led_positions, detected_led_positions2,matches);
+	for(auto elem: matches)
+		std::cout<< elem << " ";
+	std::cout << std::endl;
+	findDisparities(detected_led_positions, detected_led_positions2,matches);
+
+
+
+}
+
+void PoseEstimator::findDisparities(List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches){
+	for(int i=0; i< detected_led_positions.size(); i++){
+		Eigen::Vector2d& p_left = detected_led_positions(i);
+
+		Eigen::Vector2d& p_right = detected_led_positions2(matches[i]);
+		double disparity = p_left[0] - p_right[0];
+		double fx = camera_matrix_K_.at<double>(0, 0);
+		double Z = B*fx/disparity;
+		std::cout <<"pair #"<<i<<" disparity="<<disparity<<" B="<<B<<" f="<<fx<<" Z="<<Z<<std::endl;
+
+	}
+}
+
+void PoseEstimator::getBestMatch( List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches){
+	//iterate over each point in Left
+	for(int i=0; i< detected_led_positions.size(); i++){
+		Eigen::Vector2d& p_left = detected_led_positions(i);
+		//look for the closest point (in the same row)
+		double min = std::numeric_limits<double>::max();
+		int index = -1;
+		for(int j=0; j< detected_led_positions2.size(); j++){
+			Eigen::Vector2d& p_right = detected_led_positions2(j);
+			double d = std::fabs(p_left[1] - p_right[1]);
+			std::cout <<"i,j,d="<<i<<" "<<j<<" "<<d<<std::endl;
+			if(d <min){
+				min = d;
+				index = j;
+				std::cout <<"index, min="<<index<<" "<<min<<std::endl;
+			}
+
+		}
+		matches[i] = index;
+	}
 }
 
 bool PoseEstimator::estimateBodyPose(cv::Mat image, double time_to_predict)

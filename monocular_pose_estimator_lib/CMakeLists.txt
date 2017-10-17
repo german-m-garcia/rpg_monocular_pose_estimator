@@ -21,7 +21,7 @@ include_directories(
   ${OpenCV_INCLUDE_DIRS}
 )
 
-file(GLOB SOURCEFILES "src/*.cpp")
+file(GLOB SOURCEFILES "src/*.c*")
 
 add_library( ${PROJECT_NAME} SHARED ${SOURCEFILES})
 add_dependencies( ${PROJECT_NAME} SHARED ${catkin_EXPORTED_TARGETS} ) 

@@ -8,7 +8,7 @@ class MPENodelet : public nodelet::Nodelet {
 public:
   virtual void onInit();
 protected:
-  std::shared_ptr<MPENode> mpe_node;
+  std::shared_ptr<SPENode> mpe_node;
 };
 
 }

@@ -40,7 +40,7 @@ namespace monocular_pose_estimator
  * Constructor of the Monocular Pose Estimation Node class
  *
  */
-MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
+SPENode::SPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   : nh_(nh), nh_private_(nh_private), have_camera_info_(false), rgb_have_camera_info_(false), right_ir_have_camera_info_(false), tfs_requested_(false), busy_(false),
 	ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),right_ir_sub_(nh_, "/camera/image_right_ir",1),
 	sync_two_(SyncPolicyTwo(10), ir_sub_, rgb_sub_)
@@ -48,7 +48,7 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   // Set up a dynamic reconfigure server.
   // This should be done before reading parameter server values.
   dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig>::CallbackType cb_;
-  cb_ = boost::bind(&MPENode::dynamicParametersCallback, this, _1, _2);
+  cb_ = boost::bind(&SPENode::dynamicParametersCallback, this, _1, _2);
   dr_server_.setCallback(cb_);
 
   // Initialize subscribers
@@ -58,15 +58,15 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   //message_filters::Subscriber<sensor_msgs::Image> rgb_sub(nh_, "/camera/image_rgb",1);
   //sync_ = message_filters::Synchronizer<MySyncPolicy>(MySyncPolicy(500), ir_sub, rgb_sub);
 
-  sync_two_.registerCallback(&MPENode::sync_callback_rgb_ir, this);
+  sync_two_.registerCallback(&SPENode::sync_callback_rgb_ir, this);
   //sync_three_.registerCallback(&MPENode::sync_callback_rgb_stereo_ir, this);
 
 
   //originally only subscribed to the ir topic
   //image_sub_ = nh_.subscribe("/camera/image_raw", 1, &MPENode::imageCallback, this);
-  camera_info_sub_ = nh_.subscribe("/camera/camera_info", 1, &MPENode::cameraInfoCallback, this);
-  rgb_camera_info_sub_ = nh_.subscribe("/camera/image_rgb_camera_info", 1, &MPENode::rgbCameraInfoCallback, this);
-  right_ir_camera_info_sub_ = nh_.subscribe("/camera/image_right_ir_camera_info", 1, &MPENode::rightIRCameraInfoCallback, this);
+  camera_info_sub_ = nh_.subscribe("/camera/camera_info", 1, &SPENode::cameraInfoCallback, this);
+  rgb_camera_info_sub_ = nh_.subscribe("/camera/image_rgb_camera_info", 1, &SPENode::rgbCameraInfoCallback, this);
+  right_ir_camera_info_sub_ = nh_.subscribe("/camera/image_right_ir_camera_info", 1, &SPENode::rightIRCameraInfoCallback, this);
 
 
 
@@ -127,12 +127,12 @@ MPENode::MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
  * Destructor of the Monocular Pose Estimation Node class
  *
  */
-MPENode::~MPENode()
+SPENode::~SPENode()
 {
 
 }
 
-void MPENode::requestCameraTFs(){
+void SPENode::requestCameraTFs(){
 	//request the tf between IR and RGB optical frames
 	tf::StampedTransform transform;
 	try{
@@ -161,8 +161,9 @@ void MPENode::requestCameraTFs(){
 	}
 }
 
-void MPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
+void SPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
 
+	List2DPoints detected_led_positions, detected_led_positions2;
 	double time_to_predict = ir_image_msg->header.stamp.toSec();
 	ROS_INFO("MPENode::sync_callback_rgb_stereo_ir");
 
@@ -198,7 +199,7 @@ void MPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 	cv::imshow("LEFT IR",ir);
 	cv::imshow("RIGHT IR",right_ir);
 	cv::imshow("RGB",rgb);
-	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict);
+	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict, detected_led_positions, detected_led_positions2);
 	cv::waitKey(1);
 }
 
@@ -206,7 +207,7 @@ void MPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 /*
  * callback function for IR left + RGB image
  */
-void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
+void SPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
 
 	ROS_INFO("MPENode::sync_callback_rgb_ir");
 
@@ -277,15 +278,11 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
 //	pose.at<float>(1,3) = trackable_object_.getPredictedPose()(1,3) * 100.;
 //	pose.at<float>(2,3) = trackable_object_.getPredictedPose()(2,3) * 100.;
 	std::cout <<"predicted pose = "<<std::endl<<pose<<std::endl;
-	renderer_.render(renderedModel, pose);
+	renderer_.renderOverlay(rgb, pose, overlay);
 
 
 	cv::imshow("IR",ir);
 	cv::imshow("RGB",rgb);
-	cv::imshow("Render", renderedModel);
-	//blend the rendered image and the RGB frame
-	double alpha = 0.5, beta = ( 1.0 - alpha );
-	addWeighted( rgb, alpha, renderedModel, beta, 0.0, overlay);
 	cv::imshow("Overlay",overlay);
 	cv::waitKey(1);
 	{
@@ -308,7 +305,7 @@ void MPENode::sync_callback_rgb_ir(const sensor_msgs::Image::ConstPtr& ir_image_
  * \param msg the ROS message containing the camera calibration information
  *
  */
-void MPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
+void SPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
 {
   if (!have_camera_info_)
   {
@@ -334,7 +331,7 @@ void MPENode::cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
 }
 
 
-void MPENode::rightIRCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg){
+void SPENode::rightIRCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg){
 
 
 	if (!right_ir_have_camera_info_)
@@ -376,7 +373,7 @@ void MPENode::rightIRCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr&
  * \param msg the ROS message containing the camera calibration information
  *
  */
-void MPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
+void SPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg)
 {
 
 
@@ -431,7 +428,7 @@ void MPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg
 
 }
 
-void MPENode::publishLEDs(const List4DPoints& object_points_camera_frame){
+void SPENode::publishLEDs(const List4DPoints& object_points_camera_frame){
 
 
 	visualization_msgs::Marker marker;
@@ -474,7 +471,7 @@ void MPENode::publishLEDs(const List4DPoints& object_points_camera_frame){
  *
  * \param image_msg the ROS message containing the image to be processed
  */
-void MPENode::processIR(cv::Mat& image, const sensor_msgs::Image::ConstPtr& ir_image_msg)
+void SPENode::processIR(cv::Mat& image, const sensor_msgs::Image::ConstPtr& ir_image_msg)
 {
 
 	// Get time at which the image was taken. This time is used to stamp the estimated pose and also calculate the position of where to search for the makers in the image
@@ -549,7 +546,7 @@ void MPENode::processIR(cv::Mat& image, const sensor_msgs::Image::ConstPtr& ir_i
  *
  * \param image_msg the ROS message containing the image to be processed
  */
-void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& ir_image_msg)
+void SPENode::imageCallback(const sensor_msgs::Image::ConstPtr& ir_image_msg)
 {  
   // Check whether already received the camera calibration data
   if (!have_camera_info_)
@@ -641,7 +638,7 @@ void MPENode::imageCallback(const sensor_msgs::Image::ConstPtr& ir_image_msg)
 /**
  * The dynamic reconfigure callback function. This function updates the variable within the program whenever they are changed using dynamic reconfigure.
  */
-void MPENode::dynamicParametersCallback(monocular_pose_estimator::MonocularPoseEstimatorConfig &config, uint32_t level)
+void SPENode::dynamicParametersCallback(monocular_pose_estimator::MonocularPoseEstimatorConfig &config, uint32_t level)
 {
   trackable_object_.detection_threshold_value_ = config.threshold_value;
   trackable_object_.gaussian_sigma_ = config.gaussian_sigma;

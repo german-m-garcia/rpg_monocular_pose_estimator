@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
 {
   ros::init(argc, argv, "monocular_pose_tracker");
 
-  monocular_pose_estimator::MPENode mpe_node;
+  monocular_pose_estimator::SPENode mpe_node;
 
 
   ros::spin();

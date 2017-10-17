@@ -74,7 +74,7 @@ struct TrackedObject
 	List4DPoints object_points_camera_frame_;
 };
 
-class MPENode
+class SPENode
 {
 private:
 
@@ -128,9 +128,9 @@ private:
 
 public:
 
-  MPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
-  MPENode() : MPENode( ros::NodeHandle(), ros::NodeHandle("~") ){}
-  ~MPENode();
+  SPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+  SPENode() : SPENode( ros::NodeHandle(), ros::NodeHandle("~") ){}
+  ~SPENode();
 
   void cameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg);
 

@@ -91,6 +91,8 @@ public:
   cv::Mat right_ir_camera_matrix_K_; //!< Variable to store the camera matrix as an OpenCV matrix
   std::vector<double> right_ir_camera_distortion_coeffs_; //!< Variable to store the camera distortion parameters
 
+  const double B = 0.070; //!< Variable to store the Baseline of the stereo pair. Hardcoded for the R200
+
 
   int detection_threshold_value_; //!< The current threshold value for the image for LED detection
   double gaussian_sigma_; //!< The current standard deviation of the Gaussian that will be applied to the thresholded image for LED detection
@@ -102,6 +104,17 @@ public:
 
 
 private:
+
+  /**
+   * Generates all permutations of a vector of indices
+   *
+   *
+   */
+  void permute(std::vector<int>& array,int i,int length);
+
+  void findDisparities(List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches);
+
+  void getBestMatch( List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches);
 
   /**
    * Calculates the unit direction vectors leading from the camera centre of projection out to the world points/marker points - these are used in the P3P algorithm.
@@ -383,7 +396,7 @@ public:
   /**
    * Estimates the pose of the tracked object from a pair of stereo images
    */
-  bool estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict);
+  bool estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2);
 
   /**
    * Estimates the pose of the tracked object
