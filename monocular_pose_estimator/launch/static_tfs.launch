@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch> 
+ <node pkg="tf" type="static_transform_publisher" name="link1_broadcaster" args="0 0 0 0. 0. 0. 1.0 camera_link camera_rgb_frame 100" />
+ 
+<node pkg="tf" type="static_transform_publisher" name="link2_broadcaster" args="0 0 0 -0.5 0.5 -0.5 0.5  camera_rgb_frame  camera_rgb_optical_frame  100" />
+ 
+ <node pkg="tf" type="static_transform_publisher" name="link3_broadcaster" args="-0.000702558085322 0.058617528528 -0.000225123818382 0. 0. 0. 1.0 camera_link camera_depth_frame 100" />
+
+
+ 
+  <node pkg="tf" type="static_transform_publisher" name="link4_broadcaster" args="0 0 0 -0.5 0.5 -0.5 0.5 camera_depth_frame camera_depth_optical_frame 100" />
+
+
+   <node pkg="tf" type="static_transform_publisher" name="link5_broadcaster" args="-0.000702558085322 0.058617528528 -0.000225123818382 0. 0. 0. 1.0 camera_link camera_ir_frame 100" />
+   
+   
+    <node pkg="tf" type="static_transform_publisher" name="link6_broadcaster" args="0 0 0 -0.5 0.5 -0.5 0.5 camera_ir_frame camera_ir_optical_frame 100" />
+    
+     <node pkg="tf" type="static_transform_publisher" name="link7_broadcaster" args="-0.000702558085322 -0.0114378593862 -0.000225123818382 0. 0. 0. 1.0 camera_link camera_ir2_frame 100" />
+     
+
+         <node pkg="tf" type="static_transform_publisher" name="link8_broadcaster" args="0 0 0 -0.5 0.5 -0.5 0.5 camera_ir2_frame camera_ir2_optical_frame 100" />
+
+</launch> 
+
+
+  
+  
+
+
+    
+

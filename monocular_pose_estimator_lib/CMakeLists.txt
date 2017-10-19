@@ -21,8 +21,12 @@ include_directories(
   ${OpenCV_INCLUDE_DIRS}
 )
 
-file(GLOB SOURCEFILES "src/*.c*")
+set(SOURCEFILES src/cliques.cpp src/combinations.cpp src/led_detector.cpp src/p3p.cpp src/pose_estimator.cpp src/stereo_pose_estimator.cpp src/visualization.cpp)
 
 add_library( ${PROJECT_NAME} SHARED ${SOURCEFILES})
 add_dependencies( ${PROJECT_NAME} SHARED ${catkin_EXPORTED_TARGETS} ) 
 target_link_libraries( ${PROJECT_NAME} ${catkin_LIBRARIES} ${OpenCV_LIBS})
+
+add_executable(cliques
+  src/cliques.cpp
+)

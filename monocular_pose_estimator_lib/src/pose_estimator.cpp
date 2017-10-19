@@ -154,13 +154,13 @@ bool PoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to
 	}
 	std::vector<int> matches(detected_led_positions2.size());
 
+	//obtain the best match between LED detections in the stereo pair
 	getBestMatch(detected_led_positions, detected_led_positions2,matches);
 	for(auto elem: matches)
 		std::cout<< elem << " ";
 	std::cout << std::endl;
+	//compute the disparity
 	findDisparities(detected_led_positions, detected_led_positions2,matches);
-
-
 
 }
 
@@ -171,8 +171,12 @@ void PoseEstimator::findDisparities(List2DPoints& detected_led_positions,List2DP
 		Eigen::Vector2d& p_right = detected_led_positions2(matches[i]);
 		double disparity = p_left[0] - p_right[0];
 		double fx = camera_matrix_K_.at<double>(0, 0);
+		double fy = camera_matrix_K_.at<double>(1, 1);
 		double Z = B*fx/disparity;
+		double X = Z /fx * (p_left[0] -camera_matrix_K_.at<double>(2, 0));
+		double Y = Z /fy * (p_left[1] -camera_matrix_K_.at<double>(2, 1));
 		std::cout <<"pair #"<<i<<" disparity="<<disparity<<" B="<<B<<" f="<<fx<<" Z="<<Z<<std::endl;
+		std::cout <<"X="<<X<<" Y="<<Y<<std::endl;
 
 	}
 }
