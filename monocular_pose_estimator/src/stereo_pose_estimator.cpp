@@ -155,6 +155,7 @@ void SPENode::requestCameraTFs(){
 void SPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg){
 
 	List2DPoints detected_led_positions, detected_led_positions2;
+	List4DPoints detected_LEDs;
 	double time_to_predict = ir_image_msg->header.stamp.toSec();
 	ROS_INFO("SPENode::sync_callback_rgb_stereo_ir");
 
@@ -190,8 +191,9 @@ void SPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 	cv::imshow("LEFT IR",ir);
 	cv::imshow("RIGHT IR",right_ir);
 	cv::imshow("RGB",rgb);
-	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict,detected_led_positions, detected_led_positions2);
-	cv::waitKey(0);
+	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict,detected_led_positions, detected_led_positions2,detected_LEDs);
+	publishLEDs(detected_LEDs);
+	//cv::waitKey(0);
 }
 
 

@@ -153,7 +153,7 @@ void StereoPoseEstimator::computeHistograms(List4DPoints& points){
  * @detected_led_positions: the undistorted pixel coordinates of the LEDs in the left IR image
  * @detected_led_positions2: the undistorted pixel coordinates of the LEDs in the right IR image
  */
-bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2){
+bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, List4DPoints& detected_LEDs){
 
 	List4DPoints triangulated_LEDs;
 	bool right = true;
@@ -173,8 +173,8 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 						  right_ir_camera_distortion_coeffs_, right);
 
 	//create a confusion matrix with the distances between the detections
-	cv::Mat confusion_distances_left = cv::Mat::zeros(detected_led_positions.size(), detected_led_positions2.size(), CV_32FC2);
-	cv::Mat confusion_distances_right = cv::Mat::zeros(detected_led_positions.size(), detected_led_positions2.size(), CV_32FC2);
+	cv::Mat confusion_distances_left = cv::Mat::zeros(detected_led_positions.size(), detected_led_positions.size(), CV_32FC2);
+	cv::Mat confusion_distances_right = cv::Mat::zeros(detected_led_positions2.size(), detected_led_positions2.size(), CV_32FC2);
 
 	//iterate for each detection in the left image
 	for(int i=0; i< detected_led_positions.size(); i++){
@@ -207,7 +207,7 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 			Eigen::Vector2d& p_right = detected_led_positions2(i);
 			std::cout <<"Right point #"<<i<<" = "<<p_right<<std::endl;
 	}
-	std::vector<int> matches(detected_led_positions2.size());
+	std::vector<int> matches(detected_led_positions.size());
 
 	//obtain the best match between LED detections in the stereo pair
 	getBestMatch(detected_led_positions, detected_led_positions2,matches);
@@ -223,6 +223,17 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 	std::vector<std::vector<int> > cliques;
 	find_cliques(graph, K, cliques);
 	debug_graph(cliques);
+	int i=0;
+	if(cliques.size()>=1){
+		detected_LEDs.resize(object_points_.size());
+		std::vector<int> & clique = cliques[0];
+		std::cout <<"triangulated_LEDs.size()="<<triangulated_LEDs.size()<<std::endl;
+		for(auto elem : clique){
+			std::cout <<"adding led detection #"<<elem-1<<std::endl;
+			detected_LEDs[i] = triangulated_LEDs[elem-1];
+			i++;
+		}
+	}
 
 }
 
@@ -245,8 +256,8 @@ void StereoPoseEstimator::findDisparities(const List2DPoints& detected_led_posit
 		const double fx = camera_matrix_K_.at<double>(0, 0);
 		const double fy = camera_matrix_K_.at<double>(1, 1);
 		const double Z = B*fx/disparity;
-		const double X = Z /fx * (p_left[0] -camera_matrix_K_.at<double>(2, 0));
-		const double Y = Z /fy * (p_left[1] -camera_matrix_K_.at<double>(2, 1));
+		const double X = Z /fx * (p_left[0] -camera_matrix_K_.at<double>(0, 2));
+		const double Y = Z /fy * (p_left[1] -camera_matrix_K_.at<double>(1, 2));
 		std::cout <<"pair #"<<i<<" disparity="<<disparity<<" B="<<B<<" f="<<fx<<" Z="<<Z<<std::endl;
 		std::cout <<"X="<<X<<" Y="<<Y<<std::endl;
 

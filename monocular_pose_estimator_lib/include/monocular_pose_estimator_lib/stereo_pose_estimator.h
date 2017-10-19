@@ -167,7 +167,7 @@ public:
   /**
    * Estimates the pose of the tracked object from a pair of stereo images
    */
-  bool estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2);
+  bool estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, List4DPoints& detected_LEDs);
 
 
   /**
