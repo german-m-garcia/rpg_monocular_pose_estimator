@@ -126,7 +126,7 @@
 				vector<int> clique;
 				for (int j = 0; j < cover.size(); j++)
 					if (cover[j] == 0)
-						clique.push_back(j+1);
+						clique.push_back(j);
 						//outfile << j + 1 << " ";
 
 
@@ -147,7 +147,7 @@
 			vector<int> clique;
 			for (int j = 0; j < cover.size(); j++)
 				if (cover[j] == 0)
-					clique.push_back(j+1);
+					clique.push_back(j);
 					//outfile << j + 1 << " ";
 
 			if (!clique_exists(cliques, clique))
@@ -186,7 +186,7 @@
 					vector<int> clique;
 					for (int j = 0; j < cover.size(); j++)
 						if (cover[j] == 0)
-							clique.push_back(j+1);
+							clique.push_back(j);
 							//outfile << j + 1 << " ";
 
 					if (!clique_exists(cliques, clique))
@@ -205,7 +205,7 @@
 				vector<int> clique;
 				for (int j = 0; j < cover.size(); j++)
 					if (cover[j] == 0)
-						clique.push_back(j+1);
+						clique.push_back(j);
 						//outfile << j + 1 << " ";
 
 				if (!clique_exists(cliques, clique))

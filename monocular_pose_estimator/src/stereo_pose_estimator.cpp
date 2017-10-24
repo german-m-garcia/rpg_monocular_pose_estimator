@@ -33,6 +33,10 @@
 #include <tf_conversions/tf_eigen.h>
 
 
+#include <tf_conversions/tf_eigen.h>
+#include <tf/transform_broadcaster.h>
+
+
 namespace monocular_pose_estimator
 {
 
@@ -123,6 +127,18 @@ SPENode::~SPENode()
 
 }
 
+void SPENode::publishTargetPose(Eigen::Matrix4d& P){
+
+	std::cout <<"publishTargetPose: P="<<P<<std::endl;
+	//publish the tf
+	tf::Transform P_tf;
+	Eigen::Affine3d affinePose(P);
+	tf::transformEigenToTF(affinePose, P_tf);
+	static tf::TransformBroadcaster br;
+	br.sendTransform(tf::StampedTransform(P_tf, ros::Time::now(), cam_info_.header.frame_id, "target"));
+
+}
+
 void SPENode::requestCameraTFs(){
 	//request the tf between IR and RGB optical frames
 	tf::StampedTransform transform;
@@ -156,6 +172,7 @@ void SPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 
 	List2DPoints detected_led_positions, detected_led_positions2;
 	List4DPoints detected_LEDs;
+	Eigen::Matrix4d P; //the pose of the object
 	double time_to_predict = ir_image_msg->header.stamp.toSec();
 	ROS_INFO("SPENode::sync_callback_rgb_stereo_ir");
 
@@ -191,7 +208,9 @@ void SPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 	cv::imshow("LEFT IR",ir);
 	cv::imshow("RIGHT IR",right_ir);
 	cv::imshow("RGB",rgb);
-	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict,detected_led_positions, detected_led_positions2,detected_LEDs);
+
+	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict,detected_led_positions, detected_led_positions2,detected_LEDs, P);
+	publishTargetPose(P);
 	publishLEDs(detected_LEDs);
 	//cv::waitKey(0);
 }

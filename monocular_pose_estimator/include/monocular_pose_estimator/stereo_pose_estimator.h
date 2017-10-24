@@ -114,6 +114,8 @@ private:
 
   RenderLib renderer_;
 
+  void publishTargetPose(Eigen::Matrix4d& P);
+
   void requestCameraTFs();
 
   void sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg);

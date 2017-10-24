@@ -108,7 +108,7 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
 		 cv::Scalar color = cv::Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
 		 cv::drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, cv::Point() );
 		 //PRINT THE NUMBER AS WELL
-		 std::string text = std::to_string((int)distorted_points.size());
+		 std::string text = std::to_string((int)distorted_points.size()-1);
 		 cv::putText(drawing, text, mc, 2, 1, color );
 		 if(right_ir)
 			 cv::imshow( "Right IR contours", drawing );

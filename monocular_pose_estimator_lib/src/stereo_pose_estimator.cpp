@@ -31,6 +31,7 @@
 #include "ros/ros.h"
 #include "hungarian/hungarian.h"
 
+
 namespace monocular_pose_estimator
 {
 
@@ -66,7 +67,7 @@ void StereoPoseEstimator::permute(std::vector<int>& array,int i,int length) {
 
 
 bool StereoPoseEstimator::isDistanceValid(double dist){
-	for(auto elem : dist_vector_){
+	for(auto elem : target_.dist_vector_){
 		double value = dist / elem;
 		if (0.9 < value && value < 1.1)
 			return true;
@@ -74,10 +75,9 @@ bool StereoPoseEstimator::isDistanceValid(double dist){
 	return false;
 }
 
-void StereoPoseEstimator::computeHistograms(List4DPoints& points, std::vector<std::vector<int> >& graph){
+void StereoPoseEstimator::computeDetectionsGraph(List4DPoints& points, std::vector<std::vector<int> >& graph){
 
-
-	cv::Mat distances(points.size(), points.size(), CV_64FC1, 0.);
+	detections_distances_matrix_ = cv::Mat::zeros(points.size(), points.size(), CV_64FC1);
 	graph.resize(points.size());
 	for(int i=0;i<points.size();i++)
 		graph[i].resize(points.size());
@@ -92,12 +92,14 @@ void StereoPoseEstimator::computeHistograms(List4DPoints& points, std::vector<st
 			double dx = p_i[0]-p_j[0];
 			double dy = p_i[1]-p_j[1];
 			double dz = p_i[2]-p_j[2];
-			distances.at<double>(i,j) = std::sqrt(dx*dx + dy*dy + dz*dz);
+			double d = std::sqrt(dx*dx + dy*dy + dz*dz);
 			//histogram[j] = distances.at<double>(i,j);
-			if(distances.at<double>(i,j)> 0.){
+			detections_distances_matrix_.at<double>(i,j) = d;
+			detections_distances_matrix_.at<double>(j,i) = d;
+			if(d > 0.){
+
 				//check if the distance is valid
-				if(isDistanceValid(distances.at<double>(i,j))){
-					std::cout <<"distances.at<double>(i,j)="<<distances.at<double>(i,j)<<std::endl;
+				if(isDistanceValid(d)){
 					//if so, add the edges (i,j) (j,i) to the graph
 					graph[i][j] = 1;
 					graph[j][i] = 1;
@@ -105,17 +107,122 @@ void StereoPoseEstimator::computeHistograms(List4DPoints& points, std::vector<st
 			}
 		}
 	}
-	debug_graph(graph);
+}
 
+void StereoPoseEstimator::extractCliqueDistsMatrix(std::vector<int>& clique, cv::Mat& dists_matrix_clique){
+	dists_matrix_clique = cv::Mat::zeros(clique.size(), clique.size(), CV_64FC1);
+	for(int i = 0;i < clique.size();i++){
+		for(int j = i;j < clique.size();j++){
+			dists_matrix_clique.at<double>(i,j) =  detections_distances_matrix_.at<double>(clique[i],clique[j]);
+			dists_matrix_clique.at<double>(j,i) = dists_matrix_clique.at<double>(i,j);
+		}
+	}
+}
+
+void StereoPoseEstimator::extractOrderedDistsVectorsFromMatrix(cv::Mat& dists_matrix_clique, std::vector <std::vector<double>>& dists_vector_clique){
+	dists_vector_clique.resize(dists_matrix_clique.rows);
+	for(int i=0;i< dists_matrix_clique.rows;i++)
+		dists_vector_clique[i].resize(dists_matrix_clique.cols);
+	for(int i=0;i< dists_matrix_clique.rows;i++){
+		for(int j=i; j<dists_matrix_clique.cols; j++ ){
+			dists_vector_clique[i][j] = dists_matrix_clique.at<double>(i,j);
+			dists_vector_clique[j][i] = dists_matrix_clique.at<double>(i,j);
+		}
+	}
+
+	for(int i=0;i< dists_vector_clique.size();i++){
+		//sort the distance vector of element #i
+		std::sort(dists_vector_clique[i].begin(), dists_vector_clique[i].end());
+		std::cout <<"extracted ordered dists_vector:"<<std::endl;
+		for(auto elem : dists_vector_clique[i])
+			std::cout <<elem<<" ";
+		std::cout <<std::endl;
+
+	}
 
 
 }
 
+void StereoPoseEstimator::hornPoseEstimation(List4DPoints& d_i, List4DPoints& m_i, Eigen::Matrix4d& P){
+
+	Eigen::Vector4d d_bar4(0.,0.,0.,0.), m_bar4(0.,0.,0.,0.);
+
+	for(int i=0;i< d_i.size();i++){
+		d_bar4 = d_bar4 + d_i[i];
+		m_bar4 = m_bar4 + m_i[i];
+	}
+	Eigen::Vector3d d_bar = d_bar4.head<3>() / d_i.size();
+	Eigen::Vector3d m_bar = m_bar4.head<3>() / m_i.size();
+
+	//compute correlation matrix
+	Eigen::Matrix3d H = Eigen::Matrix3d::Zero();
+	for(int i=0;i< d_i.size();i++){
+		Eigen::Vector3d d_ci = d_i[i].head<3>() - d_bar;
+		Eigen::Vector3d m_ci = m_i[i].head<3>() - m_bar;
+		H = H + (m_ci * d_ci.transpose());
+	}
+	std::cout <<"H: "<<H<<std::endl;
+	//compute SVD decomposition
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(H, Eigen::ComputeFullU | Eigen::ComputeFullV);
+	std::cout << "U: " << svd.matrixU() << std::endl;;
+	std::cout << "V: " << svd.matrixV() << std::endl;;
+	//rotation matrix R=VU'
+	Eigen::Matrix3d R = svd.matrixV() * svd.matrixU().transpose();
+	//translation T = d_bar - R*m_bar
+	Eigen::Vector3d t = d_bar - R*m_bar;
+	std::cout <<"t="<<t <<" d_bar="<<d_bar<<" m_bar="<<m_bar<<std::endl;
+	P = Eigen::Matrix4d::Identity();
+	P.block<3,3>(0,0) = R;
+	P(0,3) = t[0];
+	P(1,3) = t[1];
+	P(2,3) = t[2];
+
+}
+
+double StereoPoseEstimator::measureDist(std::vector<double>& model,std::vector<double>& detection){
+	double dist = 0.;
+	for(int i=0;i< model.size();i++){
+		double d = model[i] - detection[i];
+		d = d*d;
+		dist += d;
+	}
+	return std::sqrt(dist);
+}
 
 
-void StereoPoseEstimator::computeHistograms(List4DPoints& points){
+void StereoPoseEstimator::matchLEDDetectionsToTargetModel(std::vector <std::vector<double>>& dists_vector_clique,std::vector<int>& clique ,  TargetLEDsModel& target, std::vector<int>& detections_labels){
+	detections_labels.resize(dists_vector_clique.size());
+	//iterate over the detections
+	for(int i=0;i < dists_vector_clique.size();i++){
+		double min_dist = std::numeric_limits<double>::max();
+		int index = -1;
+		//iterate over each LED in the model
+		for(int j=0; j< target.distances_matrix_.rows; j++){
 
-	cv::Mat distances(points.size(), points.size(), CV_64FC1, 0.);
+			double d = measureDist(dists_vector_clique[i],target.dists_vector_[j]);
+			std::cout<<"dist(LED="<<j<<",Detection="<<clique[i]<<")="<<d<<std::endl;
+			if(d < min_dist){
+				min_dist = d;
+				index = j;
+			}
+		}
+		//contains, for filtered detection #i the #index of the corresponding model LED
+		detections_labels[i] = index;
+	}
+	for(int i=0;i < detections_labels.size();i++){
+		std::cout <<"detection #"<<clique[i]<<" matched to LED "<<detections_labels[i]<<std::endl;
+	}
+	//cv::waitKey(0);
+}
+
+
+/**
+ * meant to be calle with the LEDs points of the target model
+ *
+ */
+void StereoPoseEstimator::computeTargetModelHistograms(List4DPoints& points){
+
+	target_.distances_matrix_ = cv::Mat::zeros(points.size(), points.size(), CV_64FC1);
 
 	//iterate over each pair
 	for(int i=0;i<points.size();i++){
@@ -127,18 +234,21 @@ void StereoPoseEstimator::computeHistograms(List4DPoints& points){
 			double dx = p_i[0]-p_j[0];
 			double dy = p_i[1]-p_j[1];
 			double dz = p_i[2]-p_j[2];
-			distances.at<double>(i,j) = std::sqrt(dx*dx + dy*dy + dz*dz);
+			target_.distances_matrix_.at<double>(i,j) = std::sqrt(dx*dx + dy*dy + dz*dz);
 			//histogram[j] = distances.at<double>(i,j);
-			if(distances.at<double>(i,j)> 0.){
-				dist_vector_.push_back(distances.at<double>(i,j));
+			if(target_.distances_matrix_.at<double>(i,j)> 0.){
+				target_.dist_vector_.push_back(target_.distances_matrix_.at<double>(i,j));
 			}
 		}
 	}
-	std::sort(dist_vector_.begin(), dist_vector_.end());
+	std::sort(target_.dist_vector_.begin(), target_.dist_vector_.end());
 	std::cout << "dist_vector = ";
-	for(auto elem : dist_vector_)
+	for(auto elem : target_.dist_vector_)
 		std::cout <<elem<<" ";
 	std::cout <<std::endl;
+	extractOrderedDistsVectorsFromMatrix(target_.distances_matrix_, target_.dists_vector_);
+
+
 }
 
 //double StereoPoseEstimator::computeCost(){
@@ -153,9 +263,9 @@ void StereoPoseEstimator::computeHistograms(List4DPoints& points){
  * @detected_led_positions: the undistorted pixel coordinates of the LEDs in the left IR image
  * @detected_led_positions2: the undistorted pixel coordinates of the LEDs in the right IR image
  */
-bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, List4DPoints& detected_LEDs){
+bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, List4DPoints& detected_LEDs, Eigen::Matrix4d& P){
 
-	List4DPoints triangulated_LEDs;
+	List4DPoints detected_LEDs_3D;
 	bool right = true;
 
 	region_of_interest_ = cv::Rect(0, 0, ir.cols, ir.rows);
@@ -172,32 +282,6 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 						  detected_led_positions2, distorted_detection_centers_, right_ir_camera_matrix_K_,
 						  right_ir_camera_distortion_coeffs_, right);
 
-	//create a confusion matrix with the distances between the detections
-	cv::Mat confusion_distances_left = cv::Mat::zeros(detected_led_positions.size(), detected_led_positions.size(), CV_32FC2);
-	cv::Mat confusion_distances_right = cv::Mat::zeros(detected_led_positions2.size(), detected_led_positions2.size(), CV_32FC2);
-
-	//iterate for each detection in the left image
-	for(int i=0; i< detected_led_positions.size(); i++){
-		Eigen::Vector2d& p_left = detected_led_positions(i);
-		for(int j=i; j< detected_led_positions.size(); j++){
-			Eigen::Vector2d& p_left_other = detected_led_positions(j);
-			confusion_distances_left.at<cv::Vec2f>(i,j)[0] = p_left[0] - p_left_other[0];
-			confusion_distances_left.at<cv::Vec2f>(i,j)[1] = p_left[1] - p_left_other[1];
-		}
-	}
-	for(int i=0; i< detected_led_positions2.size(); i++){
-		Eigen::Vector2d& p_right = detected_led_positions2(i);
-		for(int j=i; j< detected_led_positions2.size(); j++){
-			Eigen::Vector2d& p_right_other = detected_led_positions2(j);
-			confusion_distances_right.at<cv::Vec2f>(i,j)[0] = p_right[0] - p_right_other[0];
-			confusion_distances_right.at<cv::Vec2f>(i,j)[1] = p_right[1] - p_right_other[1];
-		}
-	}
-
-	std::cout <<"LED left histogram="<<std::endl<<confusion_distances_left<<std::endl;
-	std::cout <<"LED right histogram="<<std::endl<<confusion_distances_right<<std::endl;
-
-
 	//print the points
 	for(int i=0; i< detected_led_positions.size(); i++){
 			Eigen::Vector2d& p_left = detected_led_positions(i);
@@ -210,14 +294,16 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 	std::vector<int> matches(detected_led_positions.size());
 
 	//obtain the best match between LED detections in the stereo pair
-	getBestMatch(detected_led_positions, detected_led_positions2,matches);
+	getBestStereoMatch(detected_led_positions, detected_led_positions2,matches);
 	for(auto elem: matches)
 		std::cout<< elem << " ";
 	std::cout << std::endl;
+
 	//compute the disparity
-	findDisparities(detected_led_positions, detected_led_positions2,matches,triangulated_LEDs);
-	 std::vector<std::vector<int> > graph;
-	computeHistograms(triangulated_LEDs, graph);
+	findDisparities(detected_led_positions, detected_led_positions2,matches,detected_LEDs_3D);
+	std::vector<std::vector<int> > graph;
+	computeDetectionsGraph(detected_LEDs_3D, graph);
+
 	//find the maximum clique of size the number of markers in the model
 	int K = object_points_.size();
 	std::vector<std::vector<int> > cliques;
@@ -227,15 +313,38 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 	if(cliques.size()>=1){
 		detected_LEDs.resize(object_points_.size());
 		std::vector<int> & clique = cliques[0];
-		std::cout <<"triangulated_LEDs.size()="<<triangulated_LEDs.size()<<std::endl;
+		std::cout <<"triangulated_LEDs.size()="<<detected_LEDs_3D.size()<<std::endl;
 		for(auto elem : clique){
-			std::cout <<"adding led detection #"<<elem-1<<std::endl;
-			detected_LEDs[i] = triangulated_LEDs[elem-1];
+			std::cout <<"adding led detection #"<<elem<<std::endl;
+			//construct the detections list in the right order
+			detected_LEDs[i] = detected_LEDs_3D[elem];
 			i++;
 		}
+		//at this point we have the detected 3D LEDs indexed by clique[0] in detected_LEDs
+		cv::Mat dists_matrix_clique;
+		std::vector<int> detections_labels;
+		std::vector <std::vector<double>> dists_vector_clique;
+		extractCliqueDistsMatrix(cliques[0], dists_matrix_clique);
+		extractOrderedDistsVectorsFromMatrix(dists_matrix_clique, dists_vector_clique);
+		//contains, for filtered detection #i the #index of the corresponding model LED
+		matchLEDDetectionsToTargetModel(dists_vector_clique, cliques[0], target_,detections_labels);
+
+		List4DPoints detected_LEDs_reordered;
+		detected_LEDs_reordered.resize(detected_LEDs.size());
+		//reorder the detections
+		for(int i=0;i<detections_labels.size();i++){
+			detected_LEDs_reordered[detections_labels[i]] = detected_LEDs[i];
+		}
+
+		//figure out the pose using Horn's method
+		hornPoseEstimation(detected_LEDs_reordered, object_points_,P);
+
 	}
 
+
 }
+
+
 
 /**
  * @detected_led_positions: input, the detected undistorted centres of the LEDs in the left IR image
@@ -271,7 +380,7 @@ void StereoPoseEstimator::findDisparities(const List2DPoints& detected_led_posit
 
 }
 
-void StereoPoseEstimator::getBestMatch( List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches){
+void StereoPoseEstimator::getBestStereoMatch( List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches){
 	//iterate over each point in Left
 	for(int i=0; i< detected_led_positions.size(); i++){
 		Eigen::Vector2d& p_left = detected_led_positions(i);
@@ -302,7 +411,7 @@ void StereoPoseEstimator::setMarkerPositions(List4DPoints positions_of_markers_o
 	  const Eigen::Vector4d& LED = object_points_[i];
 	  std::cout <<"LED #"<<i<<" = "<<LED<<std::endl;
   }
-  computeHistograms(object_points_);
+  computeTargetModelHistograms(object_points_);
 }
 
 List4DPoints StereoPoseEstimator::getMarkerPositions()

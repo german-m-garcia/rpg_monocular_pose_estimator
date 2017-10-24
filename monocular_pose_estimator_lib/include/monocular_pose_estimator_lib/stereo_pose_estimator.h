@@ -44,6 +44,14 @@ namespace monocular_pose_estimator
 {
 
 
+
+struct TargetLEDsModel {
+	cv::Mat distances_matrix_; // !< contains the confusion matrix with the pairwise distances between the LED markers in the model
+	std::vector< std::vector<double> > dists_vector_;
+	std::vector<double> dist_vector_; // !< contains the distances between the LED markers in the model
+};
+
+
 /**
  * The PoseEstimator class for tracking objects with infrared LEDs and an infrared camera.
  *
@@ -81,7 +89,10 @@ private:
   static const unsigned min_num_leds_detected_ = 4; //!< Minimum number of LEDs that need to be detected for a pose to be calculated
   bool pose_updated_;
 
-  std::vector<double> dist_vector_; // !< contains the distances between the LED markers in the model
+  TargetLEDsModel target_;
+  cv::Mat detections_distances_matrix_;
+
+
 
 public:
   cv::Mat camera_matrix_K_; //!< Variable to store the camera matrix as an OpenCV matrix
@@ -106,13 +117,49 @@ public:
 
 
 private:
- /**
+
+  /**
+   * Given the model points m_i, their corresponding detections d_i, it computes the pose P of the model
+   * in the detection frame of reference
+   *
+   */
+  void hornPoseEstimation(List4DPoints& d_i, List4DPoints& m_i, Eigen::Matrix4d& P);
+
+  void matchLEDDetectionsToTargetModel(std::vector <std::vector<double>>& dists_vector_clique,std::vector<int>& clique, TargetLEDsModel& target, std::vector<int>& detections_labels);
+
+  /**
+   * computes the histogram distance (L2 Euclidean Norm)
+   *
+   */
+  double measureDist(std::vector<double>& model,std::vector<double>& detection);
+  /**
+   * matches each detected LED with the Target Model
+   * returns the association between the indices
+   *
+   */
+  void matchLEDDetectionsToTargetModel(std::vector <std::vector<double>>& dists_vector_clique, TargetLEDsModel& target);
+  /**
+   * from the distances confusion matrix between LED detections, extracts those corresponding
+   * to those LEDs in the parameter clique, and stores the result confusion matrix in dists_matrix_clique
+   */
+  void extractCliqueDistsMatrix(std::vector<int>& clique, cv::Mat& dists_matrix_clique);
+
+
+  /**
+   * from the detections distances confusion matrix, extracts a vector of vectors
+   * so that the distances for each detection can be sorted, in order to be compared with the model
+   *
+   *
+   */
+  void extractOrderedDistsVectorsFromMatrix(cv::Mat& dists_matrix_clique, std::vector <std::vector<double>>& dists_vector_clique);
+
+  /**
   * looks in the dist_vector_ for a distance within a 10% difference. If there is one the measured distance is valid
   *
   */
   bool isDistanceValid(double dist);
-  void computeHistograms(List4DPoints& points, std::vector<std::vector<int> >& graph); //!< call this one with the detections to build a graph
-  void computeHistograms(List4DPoints& points); //!< call this one with the model markers
+  void computeDetectionsGraph(List4DPoints& points, std::vector<std::vector<int> >& graph); //!< call this one with the detections to build a graph
+  void computeTargetModelHistograms(List4DPoints& points); //!< call this one with the model markers
   /**
    * Generates all permutations of a vector of indices
    *
@@ -122,7 +169,7 @@ private:
 
   void findDisparities(const List2DPoints& detected_led_positions,const List2DPoints& detected_led_positions2, std::vector<int>& matches, List4DPoints& detected_LEDs);
 
-  void getBestMatch( List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches);
+  void getBestStereoMatch( List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, std::vector<int>& matches);
 
 
 
@@ -167,7 +214,7 @@ public:
   /**
    * Estimates the pose of the tracked object from a pair of stereo images
    */
-  bool estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, List4DPoints& detected_LEDs);
+  bool estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double time_to_predict, List2DPoints& detected_led_positions,List2DPoints& detected_led_positions2, List4DPoints& detected_LEDs, Eigen::Matrix4d& P);
 
 
   /**
