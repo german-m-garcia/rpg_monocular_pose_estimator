@@ -15,7 +15,7 @@
 	<remap from="/camera/image_raw" to="/camera/ir/image_raw"/>	
 	<remap from="/camera/camera_info" to="/camera/ir/camera_info"/>
 	<!-- RGB image topics-->
-	<!--remap from="/camera/image_rgb" to="/camera/rgb/image_color"/-->
+	<!--remap from="/camera/image_rgb" to="/camera/rgb/image_raw"/-->
 	<remap from="/camera/image_rgb" to="/camera/rgb/image_raw"/>
 	<remap from="/camera/image_rgb_camera_info" to="/camera/rgb/camera_info"/>
 	<!-- Right IR image topics-->	
@@ -46,7 +46,7 @@
 	</group>
 	
 	<!-- rosbag play -->
-	<node pkg="rosbag" type="play" name="player" output="screen" args="-d 10 -l  -r 0.05 $(find monocular_pose_estimator)/bags/four_LEDs/p1234.bag"/>
+	<node pkg="rosbag" type="play" name="player" output="screen" args="-d 10 -l  -r 0.02 $(find monocular_pose_estimator)/bags/four_LEDs/p1234.bag"/>
 	
 	<!-- RVIZ -->
 	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find system_setup)/rviz/detections.rviz"  />

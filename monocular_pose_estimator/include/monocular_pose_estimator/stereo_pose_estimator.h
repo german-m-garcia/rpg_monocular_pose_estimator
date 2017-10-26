@@ -58,6 +58,7 @@
 
 #include <tf/transform_listener.h>
 #include <GLRenderer/renderLib.h>
+#include <image_geometry/pinhole_camera_model.h>
 
 typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image> SyncPolicyThree;
 
@@ -86,7 +87,7 @@ private:
   ros::Subscriber image_sub_; //!< The ROS subscriber to the raw camera image
   ros::Subscriber camera_info_sub_, rgb_camera_info_sub_, right_ir_camera_info_sub_; //!< The ROS subscriber to the camera info
 
-  ros::Publisher vis_pub_; //!< The ROS publisher that publishes markers positions in camera frame
+  ros::Publisher mesh_pub_,vis_pub_; //!< The ROS publisher that publishes markers positions in camera frame
 
   dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig> dr_server_; //!< The dynamic reconfigure server
   //dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig>::CallbackType cb_; //!< The dynamic reconfigure callback type
@@ -107,14 +108,18 @@ private:
 
   tf::TransformListener tf_listener_;
 
-  Eigen::Matrix4d rgb_T_ir; // expressed the pose of the IR frame in the RGB frame
+  Eigen::Matrix4d rgb_T_ir_; // expressed the pose of the IR frame in the RGB frame
   Matrix3x4d camera_matrix_rgb_, camera_matrix_right_ir_;
 
   std::string mesh_path_;
 
   RenderLib renderer_;
 
+  image_geometry::PinholeCameraModel rgb_cam_model_; //used to project 3D points to the RGB frame
+
   void publishTargetPose(Eigen::Matrix4d& P);
+
+  void projectLEDsRGBFrame(const List4DPoints& detected_LEDs, cv::Mat& rgb);
 
   void requestCameraTFs();
 
@@ -125,6 +130,8 @@ private:
   void rightIRCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg);
 
   void leftIRCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg);
+
+  void publishMeshMarker(Eigen::Matrix4d& object_pose);
 
 public:
 

@@ -78,6 +78,7 @@ SPENode::SPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   List4DPoints positions_of_markers_on_object;
 
   //initialize the marker publisher
+  mesh_pub_= nh_.advertise<visualization_msgs::Marker>( "MESH", 5 );
   vis_pub_ = nh_.advertise<visualization_msgs::Marker>( "LEDs", 5 );
 
   // Read the object mesh file
@@ -159,8 +160,8 @@ void SPENode::requestCameraTFs(){
 //	  }
 	  Eigen::Affine3d affine3D;
 	  tf::transformTFToEigen(tf::Transform(transform),affine3D);
-	  rgb_T_ir = affine3D.matrix();
-	  std::cout <<" requested TF rgb_T_ir="<<std::endl<<rgb_T_ir<<std::endl;
+	  rgb_T_ir_ = affine3D.matrix();
+	  std::cout <<" requested TF rgb_T_ir_="<<std::endl<<rgb_T_ir_<<std::endl;
 	}
 	catch (tf::TransformException &ex) {
 	  ROS_ERROR("%s",ex.what());
@@ -205,16 +206,73 @@ void SPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 	cv::Mat right_ir = cv_right_ir_ptr->image;
 	cv::Mat rgb = cv_rgb_ptr->image;
 
-	cv::imshow("LEFT IR",ir);
-	cv::imshow("RIGHT IR",right_ir);
-	cv::imshow("RGB",rgb);
+
 
 	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict,detected_led_positions, detected_led_positions2,detected_LEDs, P);
 	publishTargetPose(P);
 	publishLEDs(detected_LEDs);
-	//cv::waitKey(0);
+	publishMeshMarker(P);
+
+	//need to convert the pose to the rgb frame of reference!
+	P = rgb_T_ir_ *  P;
+
+	//render the object model
+	cv::Mat renderedModel, overlay;
+	cv::Mat pose = cv::Mat::eye(4,4,CV_32FC1);
+	for(int i=0;i<pose.rows; i++)
+		for(int j=0;j<pose.cols; j++){
+			pose.at<float>(i,j) = P(i,j);
+		}
+
+
+
+	std::cout <<"predicted pose (RGB frame) = "<<std::endl<<pose<<std::endl;
+	renderer_.renderOverlay(rgb, pose, overlay);
+	projectLEDsRGBFrame(detected_LEDs,  rgb);
+	cv::imshow("Overlay",overlay);
+	cv::imshow("LEFT IR",ir);
+	cv::imshow("RIGHT IR",right_ir);
+	cv::imshow("RGB",rgb);
+	cv::waitKey(1);
 }
 
+
+/**
+ * detected_LEDs: the 3D positions of the LEDs in the IR frame of reference
+ *
+ */
+void SPENode::projectLEDsRGBFrame(const List4DPoints& detected_LEDs, cv::Mat& rgb){
+	//need to transform to the RGB optical frame
+	List4DPoints markers_3D_rgb_frame;
+	List3DPoints markers_2D_rgb_frame;
+
+
+	markers_3D_rgb_frame.resize(detected_LEDs.size());
+	markers_2D_rgb_frame.resize(detected_LEDs.size());
+	for(int i=0; i< detected_LEDs.size(); i++){
+		Eigen::Vector4d& marker_rgb_frame = markers_3D_rgb_frame[i];
+		Eigen::Vector4d marker_ir_frame = detected_LEDs[i];
+		marker_rgb_frame = rgb_T_ir_ * marker_ir_frame;
+		std::cout <<"marker_ir_frame="<<marker_ir_frame<<std::endl;
+		std::cout <<"marker_rgb_frame="<<marker_rgb_frame<<std::endl;
+		std::cout <<"camera_matrix_rgb="<<camera_matrix_rgb_<<std::endl;
+		//we can now project back to the RGB plane
+		Eigen::Vector3d marker_rgb_2D = camera_matrix_rgb_ *  marker_rgb_frame;
+		marker_rgb_2D(0) /= marker_rgb_2D(2);
+		marker_rgb_2D(1) /= marker_rgb_2D(2);
+		markers_2D_rgb_frame[i] = marker_rgb_2D;
+		std::cout <<"ideal RGB coordinates="<<marker_rgb_2D(0)<<" "<<marker_rgb_2D(1)<<std::endl;
+		//would need to distort them, right?
+		cv::Point3d pt_cv(marker_rgb_frame[0], marker_rgb_frame[1], marker_rgb_frame[2]);
+		cv::Point pt_undistorted = rgb_cam_model_.project3dToPixel(pt_cv);
+
+
+
+
+		cv::Point2i paint_marker_point(marker_rgb_2D(0), marker_rgb_2D(1));
+		cv::circle(rgb, pt_undistorted, 10, CV_RGB(255, 0, 0), 2);
+	}
+}
 
 
 
@@ -272,17 +330,19 @@ void SPENode::rightIRCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr&
 
 		right_ir_have_camera_info_ = true;
 		ROS_INFO("Right IR Camera calibration information obtained.");
+
+		for (int i=0; i<3; i++)
+		{
+		 for (int j=0; j<3; j++)
+		 {
+			 camera_matrix_right_ir_(i, j) = trackable_object_.right_ir_camera_matrix_K_.at<double>(i, j);
+		 }
+		 camera_matrix_right_ir_(i, 3) = 0.0;
+		}
+		std::cout<<"camera_matrix_right_ir_ initialised="<<std::endl<<camera_matrix_right_ir_<<std::endl;
 	}
 
-	for (int i=0; i<3; i++)
-	{
-	 for (int j=0; j<3; j++)
-	 {
-		 camera_matrix_right_ir_(i, j) = trackable_object_.right_ir_camera_matrix_K_.at<double>(i, j);
-	 }
-	 camera_matrix_right_ir_(i, 3) = 0.0;
-	}
-	std::cout<<"camera_matrix_right_ir_ initialised="<<std::endl<<camera_matrix_right_ir_<<std::endl;
+
 
 }
 
@@ -326,24 +386,29 @@ void SPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg
 		double fy = trackable_object_.rgb_camera_matrix_K_.at<double>(1, 1);
 		double cx = trackable_object_.rgb_camera_matrix_K_.at<double>(0, 2);
 		double cy = trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2);
-
+//		cx = 320;
+//		cy = 240;
 		renderer_.init(fx, fy, cx, cy,  rgb_cam_info_.D, rgb_cam_info_.width, rgb_cam_info_.height, mesh_path_);
+
+		rgb_cam_model_.fromCameraInfo(msg);
+
+		std::cout <<"trackable_object_.rgb_camera_matrix_K_.size()= "<<trackable_object_.rgb_camera_matrix_K_.size()<<std::endl;
+		std::cout <<"camera_matrix_rgb_="<<camera_matrix_rgb_<<std::endl;
+		for (int i=0; i<3; i++)
+		{
+			 for (int j=0; j<3; j++)
+			 {
+				 camera_matrix_rgb_(i, j) = trackable_object_.rgb_camera_matrix_K_.at<double>(i, j);
+			 }
+			 camera_matrix_rgb_(i, 3) = 0.0;
+		}
+	   std::cout<<"camera_matrix_rgb initialised="<<std::endl<<camera_matrix_rgb_<<std::endl;
 
 	}
 
 
 
-	std::cout <<"trackable_object_.rgb_camera_matrix_K_.size()= "<<trackable_object_.rgb_camera_matrix_K_.size()<<std::endl;
-	std::cout <<"camera_matrix_rgb_="<<camera_matrix_rgb_<<std::endl;
-	for (int i=0; i<3; i++)
-   {
-     for (int j=0; j<3; j++)
-     {
-    	 camera_matrix_rgb_(i, j) = trackable_object_.rgb_camera_matrix_K_.at<double>(i, j);
-     }
-     camera_matrix_rgb_(i, 3) = 0.0;
-   }
-   std::cout<<"camera_matrix_rgb initialised="<<std::endl<<camera_matrix_rgb_<<std::endl;
+
 
 }
 
@@ -379,8 +444,37 @@ void SPENode::publishLEDs(const List4DPoints& object_points_camera_frame){
 		marker.points.push_back(p);
 	}
 	vis_pub_.publish(marker);
+}
 
+void SPENode::publishMeshMarker(Eigen::Matrix4d& object_pose){
 
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = cam_info_.header.frame_id;
+	marker.header.stamp = ros::Time();
+	marker.ns = nh_.getNamespace();
+	marker.id = 0;
+	marker.type = visualization_msgs::Marker::MESH_RESOURCE;
+	marker.mesh_resource = mesh_path_;
+	marker.mesh_resource ="package://system_setup/meshes/kaffee_aligned_scaled_meters.obj";
+	marker.action = visualization_msgs::Marker::ADD;
+
+	marker.pose.position.x = object_pose(0,3);
+	marker.pose.position.y = object_pose(1,3);
+	marker.pose.position.z = object_pose(2,3);
+	Eigen::Quaterniond q(object_pose.block<3,3>(0,0));
+	marker.pose.orientation.x = q.x();
+	marker.pose.orientation.y = q.y();
+	marker.pose.orientation.z = q.z();
+	marker.pose.orientation.w = q.w();
+	marker.scale.x = 1.0;
+	marker.scale.y = 1.0;
+	marker.scale.z = 1.0;
+	marker.color.a = 1.0; // Don't forget to set the alpha!
+	marker.color.r = 1.0;
+	marker.color.g = 0.0;
+	marker.color.b = 0.0;
+
+	mesh_pub_.publish(marker);
 }
 
 

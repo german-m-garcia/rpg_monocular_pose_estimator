@@ -69,7 +69,7 @@ void StereoPoseEstimator::permute(std::vector<int>& array,int i,int length) {
 bool StereoPoseEstimator::isDistanceValid(double dist){
 	for(auto elem : target_.dist_vector_){
 		double value = dist / elem;
-		if (0.9 < value && value < 1.1)
+		if (0.95 < value && value < 1.05)
 			return true;
 	}
 	return false;
@@ -164,10 +164,14 @@ void StereoPoseEstimator::hornPoseEstimation(List4DPoints& d_i, List4DPoints& m_
 	std::cout <<"H: "<<H<<std::endl;
 	//compute SVD decomposition
 	Eigen::JacobiSVD<Eigen::MatrixXd> svd(H, Eigen::ComputeFullU | Eigen::ComputeFullV);
-	std::cout << "U: " << svd.matrixU() << std::endl;;
-	std::cout << "V: " << svd.matrixV() << std::endl;;
+	std::cout << "U: " << svd.matrixU() << std::endl;
+	std::cout << "V: " << svd.matrixV() << std::endl;
 	//rotation matrix R=VU'
-	Eigen::Matrix3d R = svd.matrixV() * svd.matrixU().transpose();
+	Eigen::Matrix3d Norm = Eigen::Matrix3d::Identity();
+	Eigen::Matrix3d tmp = svd.matrixU() * svd.matrixV().transpose();
+	Norm(2,2) = tmp.determinant();
+	std::cout <<"Norm="<<Norm<<std::endl;
+	Eigen::Matrix3d R = svd.matrixV() * Norm * svd.matrixU().transpose();
 	//translation T = d_bar - R*m_bar
 	Eigen::Vector3d t = d_bar - R*m_bar;
 	std::cout <<"t="<<t <<" d_bar="<<d_bar<<" m_bar="<<m_bar<<std::endl;
@@ -276,11 +280,15 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 						  detected_led_positions, distorted_detection_centers_, camera_matrix_K_,
 						  camera_distortion_coeffs_, !right);
 
+
 	// Do detection of LEDs in image
 	LEDDetector::findLeds(ir2, region_of_interest_, detection_threshold_value_, gaussian_sigma_, min_blob_area_,
 						  max_blob_area_, max_width_height_distortion_, max_circular_distortion_,
 						  detected_led_positions2, distorted_detection_centers_, right_ir_camera_matrix_K_,
 						  right_ir_camera_distortion_coeffs_, right);
+
+
+
 
 	//print the points
 	for(int i=0; i< detected_led_positions.size(); i++){

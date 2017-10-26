@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   cmake_modules
   nodelet
   tf_conversions  
+  image_geometry
 )
 
 # since we need eigen search it as well
