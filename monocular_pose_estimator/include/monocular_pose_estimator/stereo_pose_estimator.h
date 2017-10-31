@@ -87,7 +87,7 @@ private:
   ros::Subscriber image_sub_; //!< The ROS subscriber to the raw camera image
   ros::Subscriber camera_info_sub_, rgb_camera_info_sub_, right_ir_camera_info_sub_; //!< The ROS subscriber to the camera info
 
-  ros::Publisher mesh_pub_,vis_pub_, chess_rgb_pub_, chess_ir_pub_; //!< The ROS publisher that publishes markers positions in camera frame
+  ros::Publisher mesh_pub_,vis_pub_, chess_rgb_pub_, chess_ir_pub_, chess_ir2_pub_; //!< The ROS publisher that publishes markers positions in camera frame
 
   dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig> dr_server_; //!< The dynamic reconfigure server
   //dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig>::CallbackType cb_; //!< The dynamic reconfigure callback type
@@ -108,7 +108,9 @@ private:
 
   tf::TransformListener tf_listener_;
 
-  Eigen::Matrix4d rgb_T_ir_; // expressed the pose of the IR frame in the RGB frame
+  Eigen::Matrix4d rgb_T_ir_; // expresses the pose of the IR frame in the RGB frame
+  Eigen::Matrix4d ir2_T_ir_; // expresses the pose of the IR frame in the IR2 frame
+
   Matrix3x4d camera_matrix_rgb_, camera_matrix_right_ir_;
 
   std::string mesh_path_;

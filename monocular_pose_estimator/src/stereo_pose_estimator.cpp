@@ -84,6 +84,7 @@ SPENode::SPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
   vis_pub_ = nh_.advertise<visualization_msgs::Marker>( "LEDs", 5 );
   chess_rgb_pub_= nh_.advertise<visualization_msgs::Marker>( "rgb_chessboard", 5 );
   chess_ir_pub_= nh_.advertise<visualization_msgs::Marker>( "ir_chessboard", 5 );
+  chess_ir2_pub_= nh_.advertise<visualization_msgs::Marker>( "ir2_chessboard", 5 );
 
 
 
@@ -148,17 +149,21 @@ void SPENode::publishTargetPose(Eigen::Matrix4d& P){
 
 void SPENode::requestCameraTFs(){
 	//request the tf between IR and RGB optical frames
-	tf::StampedTransform transform;
+	tf::StampedTransform transform, transform_irs;
 	try{
 
 		bool rc = false;
-		while( !have_camera_info_ && !rgb_have_camera_info_){
+		while( !have_camera_info_ && !rgb_have_camera_info_ && ! right_ir_have_camera_info_){
 			ros::Duration(0.03).sleep();
 		}
 
 		ROS_INFO_STREAM("requesting TF: "<<rgb_cam_info_.header.frame_id<<" - "<<cam_info_.header.frame_id);
 		tf_listener_.lookupTransform(rgb_cam_info_.header.frame_id, cam_info_.header.frame_id,
 							   ros::Time(0), transform);
+
+		tf_listener_.lookupTransform(right_ir_cam_info_.header.frame_id, cam_info_.header.frame_id,
+									   ros::Time(0), transform_irs);
+
 //	  if(!rc){
 //		  ROS_ERROR_STREAM("tf not available: "<<rgb_cam_info_.header.frame_id<<" "<<cam_info_.header.frame_id);
 //		  ros::shutdown();
@@ -178,6 +183,10 @@ void SPENode::requestCameraTFs(){
 	  rgb_T_ir_(2,3) = -0.001;
 
 	  std::cout <<" requested TF rgb_T_ir_="<<std::endl<<rgb_T_ir_<<std::endl;
+
+	  tf::transformTFToEigen(tf::Transform(transform_irs),affine3D);
+	  ir2_T_ir_ = affine3D.matrix();
+
 	}
 	catch (tf::TransformException &ex) {
 	  ROS_ERROR("%s",ex.what());
@@ -216,12 +225,13 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 		return;
 	}
 	cv::Mat ir = cv_ptr->image;
-	cv::Mat right_ir = cv_right_ir_ptr->image;
+	cv::Mat ir2 = cv_right_ir_ptr->image;
 	cv::Mat rgb = cv_rgb_ptr->image;
-	cv::Mat gray, ir_color;
+	cv::Mat gray, ir_color, ir2_color;
 	cv::Mat rgb_debug = rgb.clone();
 	cv::cvtColor(rgb, gray, cv::COLOR_RGB2GRAY);
 	cv::cvtColor(ir, ir_color, cv::COLOR_GRAY2RGB);
+	cv::cvtColor(ir2, ir2_color, cv::COLOR_GRAY2RGB);
 
 	cv::Size boardSize(8,6);
 	float squareSize = 0.025;
@@ -231,9 +241,10 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 
 		std::vector<cv::Point2f> corners; //this will be filled by the detected corners
 		std::vector<cv::Point2f> corners_ir; //this will be filled by the detected corners
-		cv::Mat r, R, t, r_ir, t_ir;
+		std::vector<cv::Point2f> corners_ir2; //this will be filled by the detected corners
+		cv::Mat r, R, t, r_ir, t_ir, r_ir2, t_ir2;
 		Eigen::Matrix4d pose_rgb = Eigen::Matrix4d::Identity();
-		Eigen::Matrix4d pose_ir = Eigen::Matrix4d::Identity();
+		Eigen::Matrix4d pose_ir = Eigen::Matrix4d::Identity(), pose_ir2 = Eigen::Matrix4d::Identity();
 		Eigen::Matrix4d ir_T_rgb = Eigen::Matrix4d::Identity();
 
 
@@ -267,7 +278,7 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 
 
 		/*
-		 * find the chessboard in the IR frame
+		 * find the chessboard in the left IR frame
 		 */
 		bool ir_found = cv::findChessboardCorners( ir, boardSize, corners_ir, cv::CALIB_CB_ADAPTIVE_THRESH );
 		if(ir_found){
@@ -292,7 +303,35 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 			pose_ir(2,3) = t_ir.at<double>(2,0);
 
 		}
-		if(rgb_found && ir_found){
+		/*
+		 * find the chessboard in the right IR frame
+		 */
+		bool ir2_found = cv::findChessboardCorners( ir2, boardSize, corners_ir2, cv::CALIB_CB_ADAPTIVE_THRESH );
+		if(ir2_found){
+
+			 cv::cornerSubPix(ir2, corners_ir2, cv::Size(11, 11), cv::Size(-1, -1),
+						cv::TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 30, 0.1));
+
+			cv::drawChessboardCorners(ir2_color, boardSize, cv::Mat(corners_ir2), ir2_found);
+
+			//compute the pose
+			cv::solvePnP(corners_3d, corners_ir2, trackable_object_.right_ir_camera_matrix_K_, cv::Mat(), r_ir2, t_ir2);
+			cv::Rodrigues(r_ir2, R);
+			//std::cout <<"estimated pose in IR2="<<R<<" translation="<<t_ir2<<std::endl;
+
+
+			for(int i = 0;i<R.rows; i++)
+				for(int j = 0;j<R.cols; j++){
+					pose_ir2(i,j) = R.at<double>(i,j);
+				}
+			pose_ir2(0,3) = t_ir2.at<double>(0,0);
+			pose_ir2(1,3) = t_ir2.at<double>(1,0);
+			pose_ir2(2,3) = t_ir2.at<double>(2,0);
+
+		}
+
+
+		if(rgb_found && ir_found && ir2_found){
 			// ir_T_rgb = ir_T_c * (rgb_T_c.inverse() )
 			ir_T_rgb = pose_ir * (pose_rgb.inverse());
 			std::cout <<"ir_T_rgb="<<ir_T_rgb<<std::endl;
@@ -304,7 +343,7 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 				cv::circle(rgb_debug, rgb_corner, 7, CV_RGB(255, 0, 0), 1);
 			}
 			//iterate over the 3D coordinates of the chessboard points
-			List4DPoints object_points_camera_frame(corners_3d.size()), object_points_ir_camera_frame(corners_3d.size());
+			List4DPoints object_points_camera_frame(corners_3d.size()), object_points_ir_camera_frame(corners_3d.size()), object_points_ir2_camera_frame(corners_3d.size());
 			int i=0;
 			for(cv::Point3f& corner_object_frame : corners_3d)
 			{
@@ -321,6 +360,10 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 				object_points_ir_camera_frame[i] = rgb_T_ir_ *  pose_ir * corner_object_frame_eigen;
 
 
+				//points in the IR2 frame of reference
+				object_points_ir2_camera_frame[i] = rgb_T_ir_ * (ir2_T_ir_.inverse())*  pose_ir2 * corner_object_frame_eigen;
+
+
 				i++;
 
 			}
@@ -329,8 +372,11 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 			publishChessboardCorners(rgb_cam_info_.header.frame_id, object_points_ir_camera_frame, colour);
 			colour = "green";
 			publishChessboardCorners(rgb_cam_info_.header.frame_id, object_points_camera_frame, colour);
+			colour = "blue";
+			publishChessboardCorners(rgb_cam_info_.header.frame_id, object_points_ir2_camera_frame, colour);
+			//publishChessboardCorners(right_ir_cam_info_.header.frame_id, object_points_ir2_camera_frame, colour);
 
-			cv::imshow("debug color", rgb_debug);
+			//cv::imshow("debug color", rgb_debug);
 
 
 
@@ -342,6 +388,7 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 
 	cv::imshow("rgb", rgb);
 	cv::imshow("ir_color", ir_color);
+	cv::imshow("ir2_color", ir2_color);
 	cv::waitKey(1);
 
 
@@ -637,6 +684,11 @@ void SPENode::publishChessboardCorners(const std::string& frame_id, const List4D
 		marker.color.g = 1.0;
 		marker.color.b = 0.0;
 	}
+	else if (colour == "blue"){
+		marker.color.r = 0.0;
+		marker.color.g = 0.0;
+		marker.color.b = 1.0;
+	}
 
 
 	for(int i=0;i < object_points_camera_frame.size(); i++){
@@ -651,6 +703,8 @@ void SPENode::publishChessboardCorners(const std::string& frame_id, const List4D
 		chess_ir_pub_.publish(marker);
 	else if(colour =="green")
 		chess_rgb_pub_.publish(marker);
+	else if(colour =="blue")
+		chess_ir2_pub_.publish(marker);
 }
 
 
