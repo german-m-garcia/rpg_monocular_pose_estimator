@@ -146,7 +146,7 @@ public:
   ~SPENode();
 
 
-  void publishChessboardCorners(const std::string& frame_id, const List4DPoints& object_points_camera_frame);
+  void publishChessboardCorners(const std::string& frame_id, const List4DPoints& object_points_camera_frame, std::string& colour);
 
   void publishLEDs(const List4DPoints& object_points_camera_frame);
 

@@ -173,8 +173,8 @@ void SPENode::requestCameraTFs(){
 							 0.01222315349346847;
 							 -0.009198530014921102]
 	   */
-	  rgb_T_ir_(0,3) = -0.0503;
-	  rgb_T_ir_(1,3) = 0.0122;
+	  rgb_T_ir_(0,3) = -0.052;
+	  rgb_T_ir_(1,3) = 0.009;
 	  rgb_T_ir_(2,3) = -0.001;
 
 	  std::cout <<" requested TF rgb_T_ir_="<<std::endl<<rgb_T_ir_<<std::endl;
@@ -314,15 +314,21 @@ void SPENode::calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_ms
 				object_points_camera_frame[i] = pose_rgb * corner_object_frame_eigen;
 
 				//if using the IR estimated pose of the chessboard
-				object_points_ir_camera_frame[i] = pose_ir * corner_object_frame_eigen;
+				//object_points_ir_camera_frame[i] = pose_ir * corner_object_frame_eigen;
+
+				//to check the fixed calibration matrix...
+				//the points are now in the RGB frame of reference
+				object_points_ir_camera_frame[i] = rgb_T_ir_ *  pose_ir * corner_object_frame_eigen;
 
 
 				i++;
 
 			}
 			//if using the RGB estimated pose of the chessboard
-			publishChessboardCorners(rgb_cam_info_.header.frame_id, object_points_camera_frame);
-			publishChessboardCorners(cam_info_.header.frame_id, object_points_ir_camera_frame);
+			std::string colour("red");
+			publishChessboardCorners(rgb_cam_info_.header.frame_id, object_points_ir_camera_frame, colour);
+			colour = "green";
+			publishChessboardCorners(rgb_cam_info_.header.frame_id, object_points_camera_frame, colour);
 
 			cv::imshow("debug color", rgb_debug);
 
@@ -603,7 +609,7 @@ void SPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg
 }
 
 
-void SPENode::publishChessboardCorners(const std::string& frame_id, const List4DPoints& object_points_camera_frame){
+void SPENode::publishChessboardCorners(const std::string& frame_id, const List4DPoints& object_points_camera_frame, std::string& colour){
 
 
 	visualization_msgs::Marker marker;
@@ -621,12 +627,12 @@ void SPENode::publishChessboardCorners(const std::string& frame_id, const List4D
 	marker.scale.y = 0.01;
 	marker.scale.z = 0.01;
 	marker.color.a = 1.0; // Don't forget to set the alpha!
-	if(frame_id ==cam_info_.header.frame_id){
+	if(colour =="red"){
 		marker.color.r = 1.0;
 		marker.color.g = 0.0;
 		marker.color.b = 0.0;
 	}
-	else if(frame_id ==rgb_cam_info_.header.frame_id){
+	else if(colour == "green"){
 		marker.color.r = 0.0;
 		marker.color.g = 1.0;
 		marker.color.b = 0.0;
@@ -641,9 +647,9 @@ void SPENode::publishChessboardCorners(const std::string& frame_id, const List4D
 		p.z = X_k(2);
 		marker.points.push_back(p);
 	}
-	if(frame_id ==cam_info_.header.frame_id)
+	if(colour =="red")
 		chess_ir_pub_.publish(marker);
-	else if(frame_id ==rgb_cam_info_.header.frame_id)
+	else if(colour =="green")
 		chess_rgb_pub_.publish(marker);
 }
 
