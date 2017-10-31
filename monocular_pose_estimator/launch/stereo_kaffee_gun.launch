@@ -16,7 +16,7 @@
 	<remap from="/camera/camera_info" to="/camera/ir/camera_info"/>
 	<!-- RGB image topics-->
 	<!--remap from="/camera/image_rgb" to="/camera/rgb/image_raw"/-->
-	<remap from="/camera/image_rgb" to="/camera/rgb/image_raw"/>
+	<remap from="/camera/image_rgb" to="/camera/rgb/image_rect_color"/>
 	<remap from="/camera/image_rgb_camera_info" to="/camera/rgb/camera_info"/>
 	<!-- Right IR image topics-->	
 	<remap from="/camera/image_right_ir" to="/camera/ir2/image_raw"/>
@@ -29,8 +29,8 @@
 			
 			<rosparam command="load" file="$(arg marker_positions_file)"/>
 			<param name= "object_mesh" value = "$(find system_setup)/meshes/kaffee_aligned_scaled_meters.obj" />
-			<param name= "threshold_value" value = "170" />
-			<param name= "gaussian_sigma" value = "0.6" />
+			<param name= "threshold_value" value = "150" /> 
+			<param name= "gaussian_sigma" value = "0.6" /> 
 			<param name= "min_blob_area" value = "15" />
 			<param name= "max_blob_area" value = "200" />
 			<param name= "max_width_height_distortion" value = "0.5" />
@@ -46,9 +46,9 @@
 	</group>
 	
 	<!-- rosbag play -->
-	<node pkg="rosbag" type="play" name="player" output="screen" args="-d 10 -l  -r 0.02 $(find monocular_pose_estimator)/bags/four_LEDs/p1234.bag"/>
+	<node pkg="rosbag" type="play" name="player" output="screen" args="-d 1 -l  -r 0.1 $(find monocular_pose_estimator)/bags/kaffee/four_LEDs/p1234.bag"/>
 	
-	<!-- RVIZ -->
-	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find system_setup)/rviz/detections.rviz"  />
+	<!-- RVIZ >
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find system_setup)/rviz/detections.rviz"  /-->
 	
 </launch>

@@ -280,6 +280,15 @@ bool StereoPoseEstimator::estimateFromStereo(cv::Mat& ir, cv::Mat& ir2, double t
 						  detected_led_positions, distorted_detection_centers_, camera_matrix_K_,
 						  camera_distortion_coeffs_, !right);
 
+	std::cout << "-------- COMPARING DISTORTED AND UNDISTORTED PIXEL CENTRES"<<std::endl;
+	for(int i=0;i< distorted_detection_centers_.size();i++){
+		const cv::Point& p_dist = distorted_detection_centers_[i];
+		const Eigen::Vector2d& p_undist = detected_led_positions[i];
+		std::cout <<"distorted: "<<p_dist.x<<" "<<p_dist.y<<std::endl;
+		std::cout <<"undistorted: "<<p_undist[0]<<" "<<p_undist[1]<<std::endl;
+
+	}
+
 
 	// Do detection of LEDs in image
 	LEDDetector::findLeds(ir2, region_of_interest_, detection_threshold_value_, gaussian_sigma_, min_blob_area_,

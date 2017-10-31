@@ -87,7 +87,7 @@ private:
   ros::Subscriber image_sub_; //!< The ROS subscriber to the raw camera image
   ros::Subscriber camera_info_sub_, rgb_camera_info_sub_, right_ir_camera_info_sub_; //!< The ROS subscriber to the camera info
 
-  ros::Publisher mesh_pub_,vis_pub_; //!< The ROS publisher that publishes markers positions in camera frame
+  ros::Publisher mesh_pub_,vis_pub_, chess_rgb_pub_, chess_ir_pub_; //!< The ROS publisher that publishes markers positions in camera frame
 
   dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig> dr_server_; //!< The dynamic reconfigure server
   //dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig>::CallbackType cb_; //!< The dynamic reconfigure callback type
@@ -117,11 +117,17 @@ private:
 
   image_geometry::PinholeCameraModel rgb_cam_model_; //used to project 3D points to the RGB frame
 
+
+
+  void calcChessboardCorners(cv::Size boardSize, float squareSize, std::vector<cv::Point3f>& corners);
+
   void publishTargetPose(Eigen::Matrix4d& P);
 
   void projectLEDsRGBFrame(const List4DPoints& detected_LEDs, cv::Mat& rgb);
 
   void requestCameraTFs();
+
+  void calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg);
 
   void sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg);
 
@@ -139,6 +145,8 @@ public:
   SPENode() : SPENode( ros::NodeHandle(), ros::NodeHandle("~") ){}
   ~SPENode();
 
+
+  void publishChessboardCorners(const std::string& frame_id, const List4DPoints& object_points_camera_frame);
 
   void publishLEDs(const List4DPoints& object_points_camera_frame);
 

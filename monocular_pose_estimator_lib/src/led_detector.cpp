@@ -40,7 +40,8 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
                            List2DPoints &pixel_positions, std::vector<cv::Point2f> &distorted_detection_centers,
                            const cv::Mat &camera_matrix_K, const std::vector<double> &camera_distortion_coeffs, bool right_ir)
 {
-  // Threshold the image
+  //cv::Mat debug = cv::Mat::zeros( gaussian_image.size(), CV_8UC3 );
+	// Threshold the image
   cv::Mat bw_image;
   //cv::threshold(image, bwImage, threshold_value, 255, cv::THRESH_BINARY);
   cv::threshold(image(ROI), bw_image, threshold_value, 255, cv::THRESH_TOZERO);
@@ -58,7 +59,7 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
   ksize.height = 0;
   cv::GaussianBlur(bw_image.clone(), gaussian_image, ksize, gaussian_sigma, gaussian_sigma, cv::BORDER_DEFAULT);
 
-  //cv::imshow( "Gaussian", gaussian_image );
+  //cv::imshow( "Blurred Image", gaussian_image );
 
   // Find all contours
   std::vector<std::vector<cv::Point> > contours;
@@ -66,6 +67,7 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
   cv::RNG rng(12345);
   cv::findContours(gaussian_image.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
   cv::Mat drawing = cv::Mat::zeros( gaussian_image.size(), CV_8UC3 );
+  cv::cvtColor(image, drawing, cv::COLOR_GRAY2BGR);
   //DEBUG: draw all the contours
 //  {
 //
@@ -106,7 +108,7 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
       //draw the valid LED detection
       {
 		 cv::Scalar color = cv::Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
-		 cv::drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, cv::Point() );
+		 cv::drawContours( drawing, contours, i, color, 1, 8, hierarchy, 0, cv::Point() );
 		 //PRINT THE NUMBER AS WELL
 		 std::string text = std::to_string((int)distorted_points.size()-1);
 		 cv::putText(drawing, text, mc, 2, 1, color );
@@ -150,14 +152,17 @@ void LEDDetector::findLeds(const cv::Mat &image, cv::Rect ROI, const int &thresh
 
       } else {
 
-    	  drawing.at<cv::Vec3b>(row,col)[0] = 255;
-    	  drawing.at<cv::Vec3b>(row,col)[1] = 255;
+    	  drawing.at<cv::Vec3b>(row,col)[0] = 0;
+    	  drawing.at<cv::Vec3b>(row,col)[1] = 0;
     	  drawing.at<cv::Vec3b>(row,col)[2] = 255;
       }
 
     }
-    //cv::imshow("contours and points",drawing);
-    cv::waitKey(1);
+    if(right_ir)
+    	cv::imwrite("withcentres_right.png",drawing);
+    else
+    	cv::imwrite("withcentres_left.png",drawing);
+
   }
 }
 
