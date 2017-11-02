@@ -109,6 +109,7 @@ private:
   tf::TransformListener tf_listener_;
 
   Eigen::Matrix4d rgb_T_ir_; // expresses the pose of the IR frame in the RGB frame
+  Eigen::Matrix4d rgb_T_ir2_; // expresses the pose of the IR frame in the RGB frame
   Eigen::Matrix4d ir2_T_ir_; // expresses the pose of the IR frame in the IR2 frame
 
   Matrix3x4d camera_matrix_rgb_, camera_matrix_right_ir_;
@@ -121,15 +122,11 @@ private:
 
 
 
-  void calcChessboardCorners(cv::Size boardSize, float squareSize, std::vector<cv::Point3f>& corners);
-
   void publishTargetPose(Eigen::Matrix4d& P);
 
   void projectLEDsRGBFrame(const List4DPoints& detected_LEDs, cv::Mat& rgb);
 
   void requestCameraTFs();
-
-  void calibrate_callback(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg);
 
   void sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir_image_msg,const sensor_msgs::Image::ConstPtr& ir_right_image_msg, const sensor_msgs::Image::ConstPtr& rgb_image_msg);
 
@@ -146,9 +143,6 @@ public:
   SPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
   SPENode() : SPENode( ros::NodeHandle(), ros::NodeHandle("~") ){}
   ~SPENode();
-
-
-  void publishChessboardCorners(const std::string& frame_id, const List4DPoints& object_points_camera_frame, std::string& colour);
 
   void publishLEDs(const List4DPoints& object_points_camera_frame);
 

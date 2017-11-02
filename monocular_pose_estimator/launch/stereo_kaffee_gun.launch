@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch> 
 
-	<include file="$(find monocular_pose_estimator)/launch/static_tfs.launch" />
+	<include file="$(find robot_launch)/camera/calibrated_tfs.launch" />
 	
 	<!-- Name of the YAML file containing the marker positions -->
 	<arg name="YAML_file_name" default="kaffee_filter_gun"/>
@@ -48,7 +48,7 @@
 	<!-- rosbag play -->
 	<node pkg="rosbag" type="play" name="player" output="screen" args="-d 1 -l  -r 0.1 $(find monocular_pose_estimator)/bags/kaffee/four_LEDs/p1234.bag"/>
 	
-	<!-- RVIZ >
-	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find system_setup)/rviz/detections.rviz"  /-->
+	<!-- RVIZ -->
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find system_setup)/rviz/detections.rviz"  />
 	
 </launch>

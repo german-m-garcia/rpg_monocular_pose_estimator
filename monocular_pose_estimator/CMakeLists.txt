@@ -73,6 +73,17 @@ target_link_libraries(stereo_pose_estimator
    ${GLUT_LIBRARY}
  )
  
+add_executable(stereo_calibrate
+  src/stereo_calibrate.cpp 
+)
+add_dependencies(stereo_calibrate ${catkin_EXPORTED_TARGETS}  ${PROJECT_NAME}_gencfg)
+
+target_link_libraries(stereo_calibrate
+   yaml-cpp
+   ${catkin_LIBRARIES}
+   ${OpenCV_LIBRARIES}  
+ )
+ 
 
 # make the nodelet
 #add_library(monocular_pose_estimator_nodelet
