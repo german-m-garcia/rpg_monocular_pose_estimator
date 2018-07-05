@@ -31,6 +31,7 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <visualization_msgs/Marker.h>
 #include <tf_conversions/tf_eigen.h>
+#include <geometry_msgs/PoseStamped.h>
 
 
 #include <tf_conversions/tf_eigen.h>
@@ -45,7 +46,7 @@ namespace monocular_pose_estimator
  *
  */
 SPENode::SPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
-  : nh_(nh), nh_private_(nh_private), have_camera_info_(false), rgb_have_camera_info_(false), right_ir_have_camera_info_(false), tfs_requested_(false), busy_(false),
+  : nh_(nh), nh_private_(nh_private), have_camera_info_(false), rgb_have_camera_info_(false), right_ir_have_camera_info_(false), tfs_requested_(false), busy_(false),debug_visualize_(false),
 	ir_sub_(nh_, "/camera/image_raw",1), rgb_sub_(nh_, "/camera/image_rgb",1),right_ir_sub_(nh_, "/camera/image_right_ir",1),
 	sync_three_(SyncPolicyThree(10), ir_sub_, right_ir_sub_, rgb_sub_)
 {
@@ -69,7 +70,7 @@ SPENode::SPENode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
 
 
   // Initialize pose publisher
-  pose_pub_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("estimated_pose", 1);
+  pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("estimated_pose", 1);
 
   // Initialize image publisher for visualization
   image_transport::ImageTransport image_transport(nh_);
@@ -137,7 +138,8 @@ SPENode::~SPENode()
 
 void SPENode::publishTargetPose(Eigen::Matrix4d& P){
 
-	std::cout <<"publishTargetPose: P="<<P<<std::endl;
+	if(debug_visualize_)
+		std::cout <<"publishTargetPose: P="<<P<<std::endl;
 	//publish the tf
 	tf::Transform P_tf;
 	Eigen::Affine3d affinePose(P);
@@ -145,6 +147,25 @@ void SPENode::publishTargetPose(Eigen::Matrix4d& P){
 	static tf::TransformBroadcaster br;
 	br.sendTransform(tf::StampedTransform(P_tf, ros::Time::now(), cam_info_.header.frame_id, "target"));
 
+}
+
+void SPENode::publishMsgTargetPose(Eigen::Matrix4d& P, const sensor_msgs::Image::ConstPtr& ir_image_msg){
+
+	//convert Eigen Matrix to geometry_msgs::Pose
+	predicted_pose_.header.stamp = ir_image_msg->header.stamp;
+	predicted_pose_.pose.position.x = P(0, 3);
+	predicted_pose_.pose.position.y = P(1, 3);
+	predicted_pose_.pose.position.z = P(2, 3);
+	Eigen::Quaterniond orientation = Eigen::Quaterniond(P.block<3, 3>(0, 0));
+	predicted_pose_.pose.orientation.x = orientation.x();
+	predicted_pose_.pose.orientation.y = orientation.y();
+	predicted_pose_.pose.orientation.z = orientation.z();
+	predicted_pose_.pose.orientation.w = orientation.w();
+
+	
+	//publish it
+	pose_pub_.publish(predicted_pose_);
+	
 }
 
 void SPENode::requestCameraTFs(){
@@ -255,32 +276,40 @@ void SPENode::sync_callback_rgb_stereo_ir(const sensor_msgs::Image::ConstPtr& ir
 
 
 
-	trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict,detected_led_positions, detected_led_positions2,detected_LEDs, P);
-	publishTargetPose(P);
-	publishLEDs(detected_LEDs);
-	publishMeshMarker(P);
+	bool object_found = trackable_object_.estimateFromStereo(ir, right_ir, time_to_predict,detected_led_positions, detected_led_positions2,detected_LEDs, P);
+	if(object_found){
+	  publishTargetPose(P);
+	  publishMsgTargetPose(P, ir_image_msg);
+      publishLEDs(detected_LEDs);
+	  publishMeshMarker(P);
 
-	//need to convert the pose to the rgb frame of reference!
-	P = rgb_T_ir_ *  P;
+	  //need to convert the pose to the rgb frame of reference!
+	  P = rgb_T_ir_ *  P;
 
-	//render the object model
-	cv::Mat renderedModel, overlay;
-	cv::Mat pose = cv::Mat::eye(4,4,CV_32FC1);
-	for(int i=0;i<pose.rows; i++)
+	  //render the object model
+ 	  cv::Mat renderedModel, overlay;
+	  cv::Mat pose = cv::Mat::eye(4,4,CV_32FC1);
+	  for(int i=0;i<pose.rows; i++)
 		for(int j=0;j<pose.cols; j++){
 			pose.at<float>(i,j) = P(i,j);
 		}
+	
 
 
 
-	std::cout <<"predicted pose (RGB frame) = "<<std::endl<<pose<<std::endl;
-	renderer_.renderOverlay(rgb, pose, overlay);
-	projectLEDsRGBFrame(detected_LEDs,  rgb);
-	cv::imshow("Overlay",overlay);
-	cv::imshow("LEFT IR",ir);
-	cv::imshow("RIGHT IR",right_ir);
-	cv::imshow("RGB",rgb);
-	cv::waitKey(1);
+	  if(debug_visualize_){
+		std::cout <<"predicted pose (RGB frame) = "<<std::endl<<pose<<std::endl;
+		renderer_.renderOverlay(rgb, pose, overlay);
+		projectLEDsRGBFrame(detected_LEDs,  rgb);
+		cv::imshow("Overlay",overlay);
+		cv::imshow("LEFT IR",ir);
+		cv::imshow("RIGHT IR",right_ir);
+		cv::imshow("RGB",rgb);
+		cv::waitKey(1);
+	  } 
+	}
+	
+	
 }
 
 
@@ -300,15 +329,19 @@ void SPENode::projectLEDsRGBFrame(const List4DPoints& detected_LEDs, cv::Mat& rg
 		Eigen::Vector4d& marker_rgb_frame = markers_3D_rgb_frame[i];
 		Eigen::Vector4d marker_ir_frame = detected_LEDs[i];
 		marker_rgb_frame = rgb_T_ir_ * marker_ir_frame;
-		std::cout <<"marker_ir_frame="<<marker_ir_frame<<std::endl;
-		std::cout <<"marker_rgb_frame="<<marker_rgb_frame<<std::endl;
-		std::cout <<"camera_matrix_rgb="<<camera_matrix_rgb_<<std::endl;
+		if(debug_visualize_){
+		  std::cout <<"marker_ir_frame="<<marker_ir_frame<<std::endl;
+  		  std::cout <<"marker_rgb_frame="<<marker_rgb_frame<<std::endl;
+		  std::cout <<"camera_matrix_rgb="<<camera_matrix_rgb_<<std::endl;
+		}
+		
 		//we can now project back to the RGB plane
 		Eigen::Vector3d marker_rgb_2D = camera_matrix_rgb_ *  marker_rgb_frame;
 		marker_rgb_2D(0) /= marker_rgb_2D(2);
 		marker_rgb_2D(1) /= marker_rgb_2D(2);
 		markers_2D_rgb_frame[i] = marker_rgb_2D;
-		std::cout <<"ideal RGB coordinates="<<marker_rgb_2D(0)<<" "<<marker_rgb_2D(1)<<std::endl;
+		if(debug_visualize_)
+		  std::cout <<"ideal RGB coordinates="<<marker_rgb_2D(0)<<" "<<marker_rgb_2D(1)<<std::endl;
 		//would need to distort them, right?
 		cv::Point3d pt_cv(marker_rgb_frame[0], marker_rgb_frame[1], marker_rgb_frame[2]);
 		cv::Point2d pt2D_cv(marker_rgb_frame[0], marker_rgb_frame[1]);
@@ -438,7 +471,8 @@ void SPENode::rgbCameraInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg
 		double cy = trackable_object_.rgb_camera_matrix_K_.at<double>(1, 2);
 //		cx = 320;
 //		cy = 240;
-		renderer_.init(fx, fy, cx, cy,  rgb_cam_info_.D, rgb_cam_info_.width, rgb_cam_info_.height, mesh_path_);
+		if(debug_visualize_)
+ 		  renderer_.init(fx, fy, cx, cy,  rgb_cam_info_.D, rgb_cam_info_.width, rgb_cam_info_.height, mesh_path_);
 
 		rgb_cam_model_.fromCameraInfo(msg);
 

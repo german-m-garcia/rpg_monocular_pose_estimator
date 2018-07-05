@@ -92,9 +92,9 @@ private:
   dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig> dr_server_; //!< The dynamic reconfigure server
   //dynamic_reconfigure::Server<monocular_pose_estimator::MonocularPoseEstimatorConfig>::CallbackType cb_; //!< The dynamic reconfigure callback type
 
-  geometry_msgs::PoseWithCovarianceStamped predicted_pose_; //!< The ROS message variable for the estimated pose and covariance of the object
+  geometry_msgs::PoseStamped predicted_pose_; //!< The ROS message variable for the estimated pose and covariance of the object
 
-  bool have_camera_info_, rgb_have_camera_info_, right_ir_have_camera_info_, tfs_requested_, busy_; //!< The boolean variable that indicates whether the camera calibration parameters have been obtained from the camera
+  bool have_camera_info_, rgb_have_camera_info_, right_ir_have_camera_info_, tfs_requested_, busy_, debug_visualize_; //!< The boolean variable that indicates whether the camera calibration parameters have been obtained from the camera
   sensor_msgs::CameraInfo cam_info_; //!< Variable to store the IR camera calibration parameters
   sensor_msgs::CameraInfo rgb_cam_info_; //!< Variable to store the RGB camera calibration parameters
   sensor_msgs::CameraInfo right_ir_cam_info_; //!< Variable to store the right IR camera calibration parameters
@@ -123,6 +123,8 @@ private:
 
 
   void publishTargetPose(Eigen::Matrix4d& P);
+  
+  void publishMsgTargetPose(Eigen::Matrix4d& P, const sensor_msgs::Image::ConstPtr& msg);
 
   void projectLEDsRGBFrame(const List4DPoints& detected_LEDs, cv::Mat& rgb);
 
